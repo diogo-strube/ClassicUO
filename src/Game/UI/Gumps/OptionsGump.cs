@@ -2689,6 +2689,7 @@ namespace ClassicUO.Game.UI.Gumps
 
             // macros
             Client.Game.GetScene<GameScene>().Macros.Save();
+            Client.Game.GetScene<GameScene>().Scripts.Save();
 
             // counters
 
