@@ -902,7 +902,7 @@ namespace ClassicUO.Network
                     {
                         if (top == World.Player)
                         {
-                            updateAbilities = it.Layer == Layer.OneHanded || it.Layer == Layer.TwoHanded;
+                            updateAbilities = it.Layer == Layer.HeldInHand1 || it.Layer == Layer.HeldInHand2;
                             Item tradeBoxItem = World.Player.GetSecureTradeBox();
 
                             if (tradeBoxItem != null)
@@ -1712,7 +1712,7 @@ namespace ClassicUO.Network
                 UIManager.GetGump<PaperDollGump>(item.Container)?.RequestUpdateContents();
             }
 
-            if (entity == World.Player && (item.Layer == Layer.OneHanded || item.Layer == Layer.TwoHanded))
+            if (entity == World.Player && (item.Layer == Layer.HeldInHand1 || item.Layer == Layer.HeldInHand2))
             {
                 World.Player?.UpdateAbilities();
             }

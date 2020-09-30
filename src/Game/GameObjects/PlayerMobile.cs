@@ -270,7 +270,7 @@ namespace ClassicUO.Game.GameObjects
         {
             ushort equippedGraphic = 0;
 
-            Item layerObject = FindItemByLayer(Layer.OneHanded);
+            Item layerObject = FindItemByLayer(Layer.HeldInHand1);
 
             if (layerObject != null)
             {
@@ -278,7 +278,7 @@ namespace ClassicUO.Game.GameObjects
             }
             else
             {
-                layerObject = FindItemByLayer(Layer.TwoHanded);
+                layerObject = FindItemByLayer(Layer.HeldInHand2);
 
                 if (layerObject != null)
                 {

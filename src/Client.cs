@@ -176,6 +176,7 @@ namespace ClassicUO
             // ok now load uo files
             UOFileManager.Load();
             StaticFilters.Load();
+            ItemDataExtensions.Load();
 
             Log.Trace("Network calibration...");
             PacketHandlers.Load();

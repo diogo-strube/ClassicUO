@@ -41,6 +41,7 @@ using ClassicUO.Game.Managers;
 using ClassicUO.Game.UI.Controls;
 using ClassicUO.Game.UI.Gumps;
 using ClassicUO.Input;
+using ClassicUO.IO;
 using ClassicUO.IO.Resources;
 using ClassicUO.Network;
 using ClassicUO.Renderer;
@@ -100,6 +101,7 @@ namespace ClassicUO.Game.Scenes
         private uint _timeToPlaceMultiInHouseCustomization;
         private readonly bool _use_render_target = false;
         private UseItemQueue _useItemQueue = new UseItemQueue();
+        private DressQueue _dressQueue = new DressQueue();
         private bool _useObjectHandles;
         private Vector4 _vectorClear = new Vector4(Vector3.Zero, 1);
         private RenderTarget2D _world_render_target, _lightRenderTarget;
@@ -127,6 +129,11 @@ namespace ClassicUO.Game.Scenes
         public void DoubleClickDelayed(uint serial)
         {
             _useItemQueue.Add(serial);
+        }
+
+        public void QueueDressAction(Action dressAction)
+        {
+            _dressQueue.Add(dressAction);
         }
 
         public override void Load()
@@ -365,6 +372,10 @@ namespace ClassicUO.Game.Scenes
 
             _useItemQueue?.Clear();
             _useItemQueue = null;
+
+            _dressQueue?.Clear();
+            _dressQueue = null;
+
             Hotkeys = null;
             Macros = null;
             Scripts = null;
@@ -727,6 +738,7 @@ namespace ClassicUO.Game.Scenes
             }
 
             _useItemQueue.Update(totalTime, frameTime);
+            _dressQueue.Update(totalTime, frameTime);
 
             if (!UIManager.IsMouseOverWorld)
             {

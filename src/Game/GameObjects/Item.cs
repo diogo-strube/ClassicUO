@@ -1,4 +1,4 @@
-﻿#region license
+#region license
 
 // Copyright (c) 2021, andreakarasho
 // All rights reserved.
@@ -190,6 +190,8 @@ namespace ClassicUO.Game.GameObjects
 
         public ref StaticTiles ItemData => ref TileDataLoader.Instance.StaticData[IsMulti ? MultiGraphic : Graphic];
 
+        public Layer StaticLayer => (Layer)ItemData.Layer;
+
         public bool IsLootable =>
             ItemData.Layer != (int) Layer.Hair && ItemData.Layer != (int) Layer.Beard && ItemData.Layer != (int) Layer.Face && Graphic != 0;
 
@@ -199,6 +201,36 @@ namespace ClassicUO.Game.GameObjects
         public bool IsDamageable;
         public Layer Layer;
         public byte LightID;
+
+        ItemExt? _itemExt;
+
+        public ItemExt_PaperdollAppearance PaperdollAppearance
+        {
+            get
+            {
+                if (_itemExt == null)
+                {
+                    ItemDataExtensions.TryGetValue(Graphic, out var value);
+                    _itemExt = value;
+                }
+
+                return _itemExt.Value.PaperdollAppearance;
+            }
+        }
+
+        public ItemExt_RequiredHands RequiredHands
+        {
+            get
+            {
+                if (_itemExt == null)
+                {
+                    ItemDataExtensions.TryGetValue(Graphic, out var value);
+                    _itemExt = value;
+                }
+
+                return _itemExt.Value.RequiredHands;
+            }
+        }
 
         public Rectangle? MultiInfo;
         public bool Opened;
