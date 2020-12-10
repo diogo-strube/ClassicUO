@@ -1516,8 +1516,7 @@ namespace ClassicUO.Game.Scripting
         //    if (args.Length > 1)
         //        throw new RunTimeError(null, "Usage: paperdoll [serial]");
 
-        //    uint serial = args.Length == 0 ? World.Player.Serial.Value : args[0].AsSerial();
-        //    Client.Instance.SendToServer(new DoubleClick(serial));
+        //    GameActions.DoubleClick(serial);
 
         //    return true;
         //}
