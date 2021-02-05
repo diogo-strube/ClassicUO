@@ -19,17 +19,29 @@
 //  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #endregion
 
+using Microsoft.Xna.Framework;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using ClassicUO.Utility;
 
 namespace ClassicUO.Game.Scripting
 {
-    public class RunTimeError : Exception
+    public class ScriptRunTimeError : Exception
     {
         public ASTNode Node;
 
-        public RunTimeError(ASTNode node, string error) : base(error)
+        public ScriptRunTimeError(ASTNode node, string error) : base(error)
+        {
+            Node = node;
+        }
+    }
+
+    public class ScriptTypeConversionError : Exception
+    {
+        public ASTNode Node;
+
+        public ScriptTypeConversionError(ASTNode node, string error) : base(error)
         {
             Node = node;
         }
@@ -49,7 +61,7 @@ namespace ClassicUO.Game.Scripting
             else if (int.TryParse(token, out val))
                 return val;
 
-            throw new RunTimeError(null, "Cannot convert argument to int");
+            throw new ScriptTypeConversionError(null, "Cannot convert argument to int");
         }
 
         public static uint ToUInt(string token)
@@ -64,7 +76,7 @@ namespace ClassicUO.Game.Scripting
             else if (uint.TryParse(token, out val))
                 return val;
 
-            throw new RunTimeError(null, "Cannot convert argument to uint");
+            throw new ScriptTypeConversionError(null, "Cannot convert argument to uint");
         }
 
         public static ushort ToUShort(string token)
@@ -79,7 +91,7 @@ namespace ClassicUO.Game.Scripting
             else if (ushort.TryParse(token, out val))
                 return val;
 
-            throw new RunTimeError(null, "Cannot convert argument to ushort");
+            throw new ScriptTypeConversionError(null, "Cannot convert argument to ushort");
         }
 
         public static double ToDouble(string token)
@@ -89,7 +101,7 @@ namespace ClassicUO.Game.Scripting
             if (double.TryParse(token, out val))
                 return val;
 
-            throw new RunTimeError(null, "Cannot convert argument to double");
+            throw new ScriptTypeConversionError(null, "Cannot convert argument to double");
         }
 
         public static bool ToBool(string token)
@@ -99,7 +111,7 @@ namespace ClassicUO.Game.Scripting
             if (bool.TryParse(token, out val))
                 return val;
 
-            throw new RunTimeError(null, "Cannot convert argument to bool");
+            throw new ScriptTypeConversionError(null, "Cannot convert argument to bool");
         }
     }
 
@@ -152,7 +164,7 @@ namespace ClassicUO.Game.Scripting
         public int AsInt()
         {
             if (_node.Lexeme == null)
-                throw new RunTimeError(_node, "Cannot convert argument to int");
+                throw new ScriptRunTimeError(_node, "Cannot convert argument to int");
 
             // Try to resolve it as a scoped variable first
             var arg = _script.Lookup(_node.Lexeme);
@@ -166,7 +178,7 @@ namespace ClassicUO.Game.Scripting
         public uint AsUInt()
         {
             if (_node.Lexeme == null)
-                throw new RunTimeError(_node, "Cannot convert argument to uint");
+                throw new ScriptRunTimeError(_node, "Cannot convert argument to uint");
 
             // Try to resolve it as a scoped variable first
             var arg = _script.Lookup(_node.Lexeme);
@@ -179,7 +191,7 @@ namespace ClassicUO.Game.Scripting
         public ushort AsUShort()
         {
             if (_node.Lexeme == null)
-                throw new RunTimeError(_node, "Cannot convert argument to ushort");
+                throw new ScriptRunTimeError(_node, "Cannot convert argument to ushort");
 
             // Try to resolve it as a scoped variable first
             var arg = _script.Lookup(_node.Lexeme);
@@ -194,7 +206,7 @@ namespace ClassicUO.Game.Scripting
         public uint AsSerial()
         {
             if (_node.Lexeme == null)
-                throw new RunTimeError(_node, "Cannot convert argument to serial");
+                throw new ScriptRunTimeError(_node, "Cannot convert argument to serial");
 
             // Try to resolve it as a scoped variable first
             var arg = _script.Lookup(_node.Lexeme);
@@ -213,7 +225,7 @@ namespace ClassicUO.Game.Scripting
         public string AsString()
         {
             if (_node.Lexeme == null)
-                throw new RunTimeError(_node, "Cannot convert argument to string");
+                throw new ScriptRunTimeError(_node, "Cannot convert argument to string");
 
             // Try to resolve it as a scoped variable first
             var arg = _script.Lookup(_node.Lexeme);
@@ -226,7 +238,7 @@ namespace ClassicUO.Game.Scripting
         public bool AsBool()
         {
             if (_node.Lexeme == null)
-                throw new RunTimeError(_node, "Cannot convert argument to bool");
+                throw new ScriptRunTimeError(_node, "Cannot convert argument to bool");
 
             return TypeConverter.ToBool(_node.Lexeme);
         }
@@ -250,6 +262,70 @@ namespace ClassicUO.Game.Scripting
                 return false;
 
             return (other._node.Lexeme == _node.Lexeme);
+        }
+    }
+
+    public class Arguments
+    {
+        public enum ArgumentType
+        {
+            Mandatory,
+            Optional,
+        }
+        public uint DefaultSerial = 0;
+        public ushort DefaultColor = 65535;
+
+        private Argument[] _args;
+        private int _index;
+
+        public Arguments(Argument[] args)
+        {
+            _args = args;
+            _index = -1;
+        }
+
+        public Argument this[int i]
+        {
+            
+            get { _index = i; return _args[_index]; }
+            set { _index = i; _args[_index] = value; }
+        }
+
+        public int Length
+        {
+            get { return _args.Length; }
+        }
+
+        public uint NextAsSerial(ArgumentType type = ArgumentType.Optional)
+        {
+            _index++;
+            if (_args.Length > _index)
+                return _args[_index].AsSerial();
+            else if(type == ArgumentType.Optional)
+                return DefaultSerial;
+            else throw new ScriptRunTimeError(null, "Serial argument does not exist at " + _index);
+        }
+
+        public ushort NextAsColor(ArgumentType type = ArgumentType.Optional)
+        {
+            _index++;
+            if (_args.Length > _index)
+            {
+                try
+                {
+                    var color = _args[_index].AsUShort();
+                    return color;
+                }
+                catch (ScriptTypeConversionError ex)
+                {
+                    // a color can also be the string "any", "grey", "red", etc..
+                    var colorName = _args[_index].AsString();
+                    return HuesHelper.ColorNameToHue(colorName);
+                }
+            }
+            else if (type == ArgumentType.Optional)
+                return DefaultColor;
+            else throw new ScriptRunTimeError(null, "Serial argument does not exist at " + _index);
         }
     }
 
@@ -286,7 +362,7 @@ namespace ClassicUO.Game.Scripting
             _scope = _scope.Parent;
         }
 
-        private Argument[] ConstructArguments(ref ASTNode node)
+        private Arguments ConstructArguments(ref ASTNode node)
         {
             List<Argument> args = new List<Argument>();
 
@@ -304,7 +380,7 @@ namespace ClassicUO.Game.Scripting
                     case ASTNodeType.LESS_THAN_OR_EQUAL:
                     case ASTNodeType.GREATER_THAN:
                     case ASTNodeType.GREATER_THAN_OR_EQUAL:
-                        return args.ToArray();
+                        return new Arguments(args.ToArray());
                 }
 
                 args.Add(new Argument(this, node));
@@ -312,7 +388,7 @@ namespace ClassicUO.Game.Scripting
                 node = node.Next();
             }
 
-            return args.ToArray();
+            return new Arguments(args.ToArray());
         }
 
         // For now, the scripts execute directly from the
@@ -336,12 +412,12 @@ namespace ClassicUO.Game.Scripting
                 return false;
 
             if (_statement.Type != ASTNodeType.STATEMENT)
-                throw new RunTimeError(_statement, "Invalid script");
+                throw new ScriptRunTimeError(_statement, "Invalid script");
 
             var node = _statement.FirstChild();
 
             if (node == null)
-                throw new RunTimeError(_statement, "Invalid statement");
+                throw new ScriptRunTimeError(_statement, "Invalid statement");
 
             int depth = 0;
 
@@ -410,7 +486,7 @@ namespace ClassicUO.Game.Scripting
                         }
 
                         if (_statement == null)
-                            throw new RunTimeError(node, "If with no matching endif");
+                            throw new ScriptRunTimeError(node, "If with no matching endif");
 
                         break;
                     }
@@ -439,7 +515,7 @@ namespace ClassicUO.Game.Scripting
                     }
 
                     if (_statement == null)
-                        throw new RunTimeError(node, "If with no matching endif");
+                        throw new ScriptRunTimeError(node, "If with no matching endif");
 
                     break;
                 case ASTNodeType.ENDIF:
@@ -471,7 +547,7 @@ namespace ClassicUO.Game.Scripting
                     }
 
                     if (_statement == null)
-                        throw new RunTimeError(node, "If with no matching endif");
+                        throw new ScriptRunTimeError(node, "If with no matching endif");
 
                     break;
                 case ASTNodeType.WHILE:
@@ -546,7 +622,7 @@ namespace ClassicUO.Game.Scripting
                     }
 
                     if (_statement == null)
-                        throw new RunTimeError(node, "Unexpected endwhile");
+                        throw new ScriptRunTimeError(node, "Unexpected endwhile");
 
                     break;
                 case ASTNodeType.FOR:
@@ -563,7 +639,7 @@ namespace ClassicUO.Game.Scripting
                             var max = node.FirstChild();
 
                             if (max.Type != ASTNodeType.INTEGER)
-                                throw new RunTimeError(max, "Invalid for loop syntax");
+                                throw new ScriptRunTimeError(max, "Invalid for loop syntax");
 
                             // Create a dummy argument that acts as our loop variable
                             var iter = new ASTNode(ASTNodeType.INTEGER, "0", node, 0);
@@ -727,7 +803,7 @@ namespace ClassicUO.Game.Scripting
                     }
 
                     if (_statement == null)
-                        throw new RunTimeError(node, "Unexpected endfor");
+                        throw new ScriptRunTimeError(node, "Unexpected endfor");
 
                     break;
                 case ASTNodeType.BREAK:
@@ -795,7 +871,7 @@ namespace ClassicUO.Game.Scripting
                     }
 
                     if (_statement == null)
-                        throw new RunTimeError(node, "Unexpected continue");
+                        throw new ScriptRunTimeError(node, "Unexpected continue");
                     break;
                 case ASTNodeType.STOP:
                     _statement = null;
@@ -855,12 +931,12 @@ namespace ClassicUO.Game.Scripting
             var handler = Interpreter.GetCommandHandler(node.Lexeme);
 
             if (handler == null)
-                throw new RunTimeError(node, "Unknown command");
+                throw new ScriptRunTimeError(node, "Unknown command");
 
             var cont = handler(node.Lexeme, ConstructArguments(ref node), quiet, force);
 
             if (node != null)
-                throw new RunTimeError(node, "Command did not consume all available arguments");
+                throw new ScriptRunTimeError(node, "Command did not consume all available arguments");
 
             return cont;
         }
@@ -868,12 +944,12 @@ namespace ClassicUO.Game.Scripting
         private bool EvaluateExpression(ref ASTNode expr)
         {
             if (expr == null || (expr.Type != ASTNodeType.UNARY_EXPRESSION && expr.Type != ASTNodeType.BINARY_EXPRESSION && expr.Type != ASTNodeType.LOGICAL_EXPRESSION))
-                throw new RunTimeError(expr, "No expression following control statement");
+                throw new ScriptRunTimeError(expr, "No expression following control statement");
 
             var node = expr.FirstChild();
 
             if (node == null)
-                throw new RunTimeError(expr, "Empty expression following control statement");
+                throw new ScriptRunTimeError(expr, "Empty expression following control statement");
 
             switch (expr.Type)
             {
@@ -894,7 +970,7 @@ namespace ClassicUO.Game.Scripting
                 node = node.Next();
 
                 if (node == null)
-                    throw new RunTimeError(node, "Invalid logical expression");
+                    throw new ScriptRunTimeError(node, "Invalid logical expression");
 
                 bool rhs;
 
@@ -909,7 +985,7 @@ namespace ClassicUO.Game.Scripting
                         rhs = EvaluateBinaryExpression(ref e);
                         break;
                     default:
-                        throw new RunTimeError(node, "Nested logical expressions are not possible");
+                        throw new ScriptRunTimeError(node, "Nested logical expressions are not possible");
                 }
 
                 switch (op)
@@ -921,7 +997,7 @@ namespace ClassicUO.Game.Scripting
                         lhs = lhs || rhs;
                         break;
                     default:
-                        throw new RunTimeError(node, "Invalid logical operator");
+                        throw new ScriptRunTimeError(node, "Invalid logical operator");
                 }
 
                 node = node.Next();
@@ -975,10 +1051,10 @@ namespace ClassicUO.Game.Scripting
             }
             catch (ArgumentException e)
             {
-                throw new RunTimeError(null, e.Message);
+                throw new ScriptRunTimeError(null, e.Message);
             }
 
-            throw new RunTimeError(null, "Unknown operator in expression");
+            throw new ScriptRunTimeError(null, "Unknown operator in expression");
 
         }
 
@@ -989,7 +1065,7 @@ namespace ClassicUO.Game.Scripting
             var handler = Interpreter.GetExpressionHandler(node.Lexeme);
 
             if (handler == null)
-                throw new RunTimeError(node, "Unknown expression");
+                throw new ScriptRunTimeError(node, "Unknown expression");
 
             var result = handler(node.Lexeme, ConstructArguments(ref node), quiet);
 
@@ -1050,7 +1126,7 @@ namespace ClassicUO.Game.Scripting
                         break;
                     }
                 default:
-                    throw new RunTimeError(node, "Invalid type found in expression");
+                    throw new ScriptRunTimeError(node, "Invalid type found in expression");
             }
 
             return val;
@@ -1069,12 +1145,12 @@ namespace ClassicUO.Game.Scripting
         private static Dictionary<string, DateTime> _timers = new Dictionary<string, DateTime>();
 
         // Expressions
-        public delegate IComparable ExpressionHandler(string expression, Argument[] args, bool quiet);
-        public delegate T ExpressionHandler<T>(string expression, Argument[] args, bool quiet) where T : IComparable;
+        public delegate IComparable ExpressionHandler(string expression, Arguments args, bool quiet);
+        public delegate T ExpressionHandler<T>(string expression, Arguments args, bool quiet) where T : IComparable;
 
         private static Dictionary<string, ExpressionHandler> _exprHandlers = new Dictionary<string, ExpressionHandler>();
 
-        public delegate bool CommandHandler(string command, Argument[] args, bool quiet, bool force);
+        public delegate bool CommandHandler(string command, Arguments args, bool quiet, bool force);
 
         private static Dictionary<string, CommandHandler> _commandHandlers = new Dictionary<string, CommandHandler>();
 
@@ -1187,7 +1263,7 @@ namespace ClassicUO.Game.Scripting
         public static bool ListContains(string name, Argument arg)
         {
             if (!_lists.ContainsKey(name))
-                throw new RunTimeError(null, "List does not exist");
+                throw new ScriptRunTimeError(null, "List does not exist");
 
             return _lists[name].Contains(arg);
         }
@@ -1195,7 +1271,7 @@ namespace ClassicUO.Game.Scripting
         public static int ListLength(string name)
         {
             if (!_lists.ContainsKey(name))
-                throw new RunTimeError(null, "List does not exist");
+                throw new ScriptRunTimeError(null, "List does not exist");
 
             return _lists[name].Count;
         }
@@ -1203,7 +1279,7 @@ namespace ClassicUO.Game.Scripting
         public static void PushList(string name, Argument arg, bool front, bool unique)
         {
             if (!_lists.ContainsKey(name))
-                throw new RunTimeError(null, "List does not exist");
+                throw new ScriptRunTimeError(null, "List does not exist");
 
             if (unique && _lists[name].Contains(arg))
                 return;
@@ -1217,7 +1293,7 @@ namespace ClassicUO.Game.Scripting
         public static bool PopList(string name, Argument arg)
         {
             if (!_lists.ContainsKey(name))
-                throw new RunTimeError(null, "List does not exist");
+                throw new ScriptRunTimeError(null, "List does not exist");
 
             return _lists[name].Remove(arg);
         }
@@ -1225,7 +1301,7 @@ namespace ClassicUO.Game.Scripting
         public static bool PopList(string name, bool front)
         {
             if (!_lists.ContainsKey(name))
-                throw new RunTimeError(null, "List does not exist");
+                throw new ScriptRunTimeError(null, "List does not exist");
 
             var idx = front ? 0 : _lists[name].Count - 1;
 
@@ -1237,7 +1313,7 @@ namespace ClassicUO.Game.Scripting
         public static Argument GetListValue(string name, int idx)
         {
             if (!_lists.ContainsKey(name))
-                throw new RunTimeError(null, "List does not exist");
+                throw new ScriptRunTimeError(null, "List does not exist");
 
             var list = _lists[name];
 
@@ -1255,7 +1331,7 @@ namespace ClassicUO.Game.Scripting
         public static TimeSpan GetTimer(string name)
         {
             if (!_timers.TryGetValue(name, out DateTime timestamp))
-                throw new RunTimeError(null, "Timer does not exist");
+                throw new ScriptRunTimeError(null, "Timer does not exist");
 
             TimeSpan elapsed = DateTime.UtcNow - timestamp;
 

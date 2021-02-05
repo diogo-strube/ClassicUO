@@ -66,6 +66,9 @@ namespace ClassicUO.Game.Scripting
 
         public static void Register()
         {
+            Interpreter.RegisterCommandHandler("findobject", CmdFindObject);
+            Interpreter.RegisterExpressionHandler("findobject", ExpFindObject);
+
             #region Deprecated
             Interpreter.RegisterCommandHandler("autoloot", Deprecated);
             Interpreter.RegisterCommandHandler("toggleautoloot", Deprecated);
@@ -194,17 +197,39 @@ namespace ClassicUO.Game.Scripting
             Interpreter.RegisterCommandHandler("getfriend", UnimplementedCommand);
         }
 
-        private static bool UnimplementedCommand(string command, Argument[] args, bool quiet, bool force)
+        private static bool UnimplementedCommand(string command, Arguments args, bool quiet, bool force)
         {
             GameActions.Print($"Unimplemented command: '{command}'", type: MessageType.System);
             return true;
         }
 
-        private static bool Deprecated(string command, Argument[] args, bool quiet, bool force)
+        private static bool Deprecated(string command, Arguments args, bool quiet, bool force)
         {
             GameActions.Print($"Deprecated command: '{command}'", type: MessageType.System);
             return true;
         }
+
+        private static bool CmdFindObject(string command, Arguments args, bool quiet, bool force)
+        {
+            // UOStream - findobject (serial) [color] [source] [amount] [range]
+            var serial = args.NextAsSerial(Arguments.ArgumentType.Mandatory);
+            var color = args.NextAsColor();
+            var source = "backpack"; //args.NextAsSource();
+            var amount = 1; // args.NextAsAmount();
+            var range = 5; // args.NextAsRange();
+            
+            // Check if serial exist
+            var graphic = World.GetOrCreateItem(serial).Graphic;
+            var item = (source == "backpack") ? World.Player.FindItem(graphic) : World.Player.FindItemByTypeOnGroundWithHueInRange(graphic, color, range);
+            return item != null && item.Amount > amount;
+ 
+        }
+        private static bool ExpFindObject(string expression, Arguments args, bool quiet)
+        {
+            return CmdFindObject(expression, args, quiet, false);
+        }
+
+
 
         //private static bool UseItem(Item cont, ushort find)
         //{
@@ -227,13 +252,13 @@ namespace ClassicUO.Game.Scripting
         //    return false;
         //}
 
-        private static bool SetAbility(string command, Argument[] args, bool quiet, bool force)
+        private static bool SetAbility(string command, Arguments args, bool quiet, bool force)
         {
             var ability = args[0].AsString();
 
             if (args.Length < 1 || !abilities.Contains(ability))
             {
-                throw new RunTimeError(null, "Usage: setability ('primary'/'secondary'/'stun'/'disarm') ['on'/'off']");
+                throw new ScriptRunTimeError(null, "Usage: setability ('primary'/'secondary'/'stun'/'disarm') ['on'/'off']");
             }
 
             if (args.Length == 2 && args[1].AsString() == "on" || args.Length == 1)
@@ -264,20 +289,20 @@ namespace ClassicUO.Game.Scripting
             return true;
         }
 
-        private static bool Attack(string command, Argument[] args, bool quiet, bool force)
+        private static bool Attack(string command, Arguments args, bool quiet, bool force)
         {
             if (args.Length < 1)
-                throw new RunTimeError(null, "Usage: attack (serial)");
+                throw new ScriptRunTimeError(null, "Usage: attack (serial)");
 
             GameActions.Attack(args[0].AsSerial());
 
             return true;
         }
 
-        private static bool ClearHands(string command, Argument[] args, bool quiet, bool force)
+        private static bool ClearHands(string command, Arguments args, bool quiet, bool force)
         {
             if (args.Length == 0 || !hands.Contains(args[0].AsString()))
-                throw new RunTimeError(null, "Usage: clearhands ('left'/'right'/'both')");
+                throw new ScriptRunTimeError(null, "Usage: clearhands ('left'/'right'/'both')");
 
             switch (args[0].AsString().ToLower())
             {
@@ -297,10 +322,10 @@ namespace ClassicUO.Game.Scripting
             return true;
         }
 
-        private static bool ClickObject(string command, Argument[] args, bool quiet, bool force)
+        private static bool ClickObject(string command, Arguments args, bool quiet, bool force)
         {
             if (args.Length == 0)
-                throw new RunTimeError(null, "Usage: clickobject (serial)");
+                throw new ScriptRunTimeError(null, "Usage: clickobject (serial)");
 
             uint serial = args[0].AsSerial();
 
@@ -309,17 +334,17 @@ namespace ClassicUO.Game.Scripting
             return true;
         }
 
-        private static bool BandageSelf(string command, Argument[] args, bool quiet, bool force)
+        private static bool BandageSelf(string command, Arguments args, bool quiet, bool force)
         {
             GameActions.BandageSelf();
             return true;
         }
 
-        private static bool UseType(string command, Argument[] args, bool quiet, bool force)
+        private static bool UseType(string command, Arguments args, bool quiet, bool force)
         {
             if (args.Length < 1)
             {
-                throw new RunTimeError(null, "Usage: usetype (graphic) [color] [source] [range or search level]");
+                throw new ScriptRunTimeError(null, "Usage: usetype (graphic) [color] [source] [range or search level]");
             }
 
             var searchGround = false;
@@ -375,11 +400,11 @@ namespace ClassicUO.Game.Scripting
             return true;
         }
 
-        private static bool UseObject(string command, Argument[] args, bool quiet, bool force)
+        private static bool UseObject(string command, Arguments args, bool quiet, bool force)
         {
             if (args.Length == 0)
             {
-                throw new RunTimeError(null, "Usage: useobject (serial)");
+                throw new ScriptRunTimeError(null, "Usage: useobject (serial)");
             }
 
             var serial = args[0].AsSerial();
@@ -396,11 +421,11 @@ namespace ClassicUO.Game.Scripting
             return true;
         }
 
-        private static bool MoveItem(string command, Argument[] args, bool quiet, bool force)
+        private static bool MoveItem(string command, Arguments args, bool quiet, bool force)
         {
             if (args.Length < 2)
             {
-                throw new RunTimeError(null, "Usage: moveitem (serial) (destination) [(x, y, z)] [amount]");
+                throw new ScriptRunTimeError(null, "Usage: moveitem (serial) (destination) [(x, y, z)] [amount]");
             }
 
             uint serial = args[0].AsSerial();
@@ -435,16 +460,16 @@ namespace ClassicUO.Game.Scripting
             return true;
         }
 
-        private static bool Walk(string command, Argument[] args, bool quiet, bool force)
+        private static bool Walk(string command, Arguments args, bool quiet, bool force)
         {
             if (args.Length != 1)
             {
-                throw new RunTimeError(null, "Usage: walk ('direction name')");
+                throw new ScriptRunTimeError(null, "Usage: walk ('direction name')");
             }
 
             if (!directions.TryGetValue(args[0].AsString().ToLower(), out var dir))
             {
-                throw new RunTimeError(null, "Usage: walk ('direction name')");
+                throw new ScriptRunTimeError(null, "Usage: walk ('direction name')");
             }
 
             if (DateTime.UtcNow < movementCooldown)
@@ -482,16 +507,16 @@ namespace ClassicUO.Game.Scripting
             return World.Player.Walk(dir, ProfileManager.CurrentProfile.AlwaysRun);
         }
 
-        private static bool Turn(string command, Argument[] args, bool quiet, bool force)
+        private static bool Turn(string command, Arguments args, bool quiet, bool force)
         {
             if (args.Length != 1)
             {
-                throw new RunTimeError(null, "Usage: turn ('direction name')");
+                throw new ScriptRunTimeError(null, "Usage: turn ('direction name')");
             }
 
             if (!directions.TryGetValue(args[0].AsString().ToLower(), out var dir))
             {
-                throw new RunTimeError(null, "Usage: turn ('direction name')");
+                throw new ScriptRunTimeError(null, "Usage: turn ('direction name')");
             }
 
             if (DateTime.UtcNow < movementCooldown)
@@ -508,16 +533,16 @@ namespace ClassicUO.Game.Scripting
             return true;
         }
 
-        private static bool Run(string command, Argument[] args, bool quiet, bool force)
+        private static bool Run(string command, Arguments args, bool quiet, bool force)
         {
             if (args.Length != 1)
             {
-                throw new RunTimeError(null, "Usage: run ('direction name')");
+                throw new ScriptRunTimeError(null, "Usage: run ('direction name')");
             }
 
             if (!directions.TryGetValue(args[0].AsString().ToLower(), out var dir))
             {
-                throw new RunTimeError(null, "Usage: run ('direction name')");
+                throw new ScriptRunTimeError(null, "Usage: run ('direction name')");
             }
 
             if (DateTime.UtcNow < movementCooldown)
@@ -548,10 +573,10 @@ namespace ClassicUO.Game.Scripting
             return World.Player.Walk(dir, true);
         }
 
-        private static bool UseSkill(string command, Argument[] args, bool quiet, bool force)
+        private static bool UseSkill(string command, Arguments args, bool quiet, bool force)
         {
             if (args.Length == 0)
-                throw new RunTimeError(null, "Usage: useskill ('skill name'/'last')");
+                throw new ScriptRunTimeError(null, "Usage: useskill ('skill name'/'last')");
 
             if (args[0].AsString() == "last")
             {
@@ -563,22 +588,22 @@ namespace ClassicUO.Game.Scripting
 
             if (!GameActions.UseSkill(skillName))
             {
-                throw new RunTimeError(null, "That skill  is not usable");
+                throw new ScriptRunTimeError(null, "That skill  is not usable");
             }
 
             return true;
         }
 
-        //private static bool Feed(string command, Argument[] args, bool quiet, bool force)
+        //private static bool Feed(string command, Arguments args, bool quiet, bool force)
         //{
         //    return true;
         //}
 
-        private static bool Rename(string command, Argument[] args, bool quiet, bool force)
+        private static bool Rename(string command, Arguments args, bool quiet, bool force)
         {
             if (args.Length != 2)
             {
-                throw new RunTimeError(null, "Usage: rename (serial) ('name')");
+                throw new ScriptRunTimeError(null, "Usage: rename (serial) ('name')");
             }
 
             var target = args[0].AsSerial();
@@ -589,17 +614,17 @@ namespace ClassicUO.Game.Scripting
             return true;
         }
 
-        private static bool SetAlias(string command, Argument[] args, bool quiet, bool force)
+        private static bool SetAlias(string command, Arguments args, bool quiet, bool force)
         {
             if (args.Length != 2)
-                throw new RunTimeError(null, "Usage: setalias ('name') [serial]");
+                throw new ScriptRunTimeError(null, "Usage: setalias ('name') [serial]");
 
             Interpreter.SetAlias(args[0].AsString(), args[1].AsSerial());
 
             return true;
         }
 
-        //private static bool PromptAlias(string command, Argument[] args, bool quiet, bool force)
+        //private static bool PromptAlias(string command, Arguments args, bool quiet, bool force)
         //{
         //    Interpreter.Pause(60000);
 
@@ -618,7 +643,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //private static bool WaitForGump(string command, Argument[] args, bool quiet, bool force)
+        //private static bool WaitForGump(string command, Arguments args, bool quiet, bool force)
         //{
         //    if (args.Length < 2)
         //        throw new RunTimeError(null, "Usage: waitforgump (gump id/'any') (timeout)");
@@ -642,14 +667,14 @@ namespace ClassicUO.Game.Scripting
         //    return false;
         //}
 
-        //private static bool ClearJournal(string command, Argument[] args, bool quiet, bool force)
+        //private static bool ClearJournal(string command, Arguments args, bool quiet, bool force)
         //{
         //    Journal.Clear();
 
         //    return true;
         //}
 
-        //private static bool WaitForJournal(string command, Argument[] args, bool quiet, bool force)
+        //private static bool WaitForJournal(string command, Arguments args, bool quiet, bool force)
         //{
         //    if (args.Length < 2)
         //        throw new RunTimeError(null, "Usage: waitforjournal ('text') (timeout) ['author'/'system']");
@@ -663,7 +688,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //private static bool PopList(string command, Argument[] args, bool quiet, bool force)
+        //private static bool PopList(string command, Arguments args, bool quiet, bool force)
         //{
         //    if (args.Length != 2)
         //        throw new RunTimeError(null, "Usage: poplist ('list name') ('element value'/'front'/'back')");
@@ -693,7 +718,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //private static bool PushList(string command, Argument[] args, bool quiet, bool force)
+        //private static bool PushList(string command, Arguments args, bool quiet, bool force)
         //{
         //    if (args.Length < 2 || args.Length > 3)
         //        throw new RunTimeError(null, "Usage: pushlist ('list name') ('element value') ['front'/'back']");
@@ -710,7 +735,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //private static bool RemoveList(string command, Argument[] args, bool quiet, bool force)
+        //private static bool RemoveList(string command, Arguments args, bool quiet, bool force)
         //{
         //    if (args.Length != 1)
         //        throw new RunTimeError(null, "Usage: removelist ('list name')");
@@ -720,7 +745,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //private static bool CreateList(string command, Argument[] args, bool quiet, bool force)
+        //private static bool CreateList(string command, Arguments args, bool quiet, bool force)
         //{
         //    if (args.Length != 1)
         //        throw new RunTimeError(null, "Usage: createlist ('list name')");
@@ -730,7 +755,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //private static bool ClearList(string command, Argument[] args, bool quiet, bool force)
+        //private static bool ClearList(string command, Arguments args, bool quiet, bool force)
         //{
         //    if (args.Length != 1)
         //        throw new RunTimeError(null, "Usage: clearlist ('list name')");
@@ -740,20 +765,20 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        private static bool UnsetAlias(string command, Argument[] args, bool quiet, bool force)
+        private static bool UnsetAlias(string command, Arguments args, bool quiet, bool force)
         {
             if (args.Length == 0)
-                throw new RunTimeError(null, "Usage: unsetalias (string)");
+                throw new ScriptRunTimeError(null, "Usage: unsetalias (string)");
 
             Interpreter.SetAlias(args[0].AsString(), 0);
 
             return true;
         }
 
-        private static bool ShowNames(string command, Argument[] args, bool quiet, bool force)
+        private static bool ShowNames(string command, Arguments args, bool quiet, bool force)
         {
             if (args.Length == 0)
-                throw new RunTimeError(null, "Usage: shownames ['mobiles'/'corpses']");
+                throw new ScriptRunTimeError(null, "Usage: shownames ['mobiles'/'corpses']");
 
             if (args[0].AsString() == "mobiles")
             {
@@ -766,11 +791,11 @@ namespace ClassicUO.Game.Scripting
             return true;
         }
 
-        public static bool ToggleHands(string command, Argument[] args, bool quiet, bool force)
+        public static bool ToggleHands(string command, Arguments args, bool quiet, bool force)
         {
             if (args.Length == 0)
             {
-                throw new RunTimeError(null, "Usage: togglehands ('left'/'right')");
+                throw new ScriptRunTimeError(null, "Usage: togglehands ('left'/'right')");
             }
 
             switch (args[0].AsString().ToLower())
@@ -782,17 +807,17 @@ namespace ClassicUO.Game.Scripting
                     GameActions.ToggleEquip(IO.ItemExt_PaperdollAppearance.Right);
                     break;
                 default:
-                    throw new RunTimeError(null, "Usage: togglehands ('left'/'right')");
+                    throw new ScriptRunTimeError(null, "Usage: togglehands ('left'/'right')");
             }
 
             return true;
         }
 
-        public static bool EquipItem(string command, Argument[] args, bool quiet, bool force)
+        public static bool EquipItem(string command, Arguments args, bool quiet, bool force)
         {
             if (args.Length < 1)
             {
-                throw new RunTimeError(null, "Usage: equipitem (serial)");
+                throw new ScriptRunTimeError(null, "Usage: equipitem (serial)");
             }
 
             var item = (Item)World.Get(args[0].AsSerial());
@@ -805,37 +830,37 @@ namespace ClassicUO.Game.Scripting
             return true;
         }
 
-        //public static bool ToggleScavenger(string command, Argument[] args, bool quiet, bool force)
+        //public static bool ToggleScavenger(string command, Arguments args, bool quiet, bool force)
         //{
         //    ScavengerAgent.Instance.ToggleEnabled();
 
         //    return true;
         //}
 
-        private static bool Pause(string command, Argument[] args, bool quiet, bool force)
+        private static bool Pause(string command, Arguments args, bool quiet, bool force)
         {
             if (args.Length == 0)
-                throw new RunTimeError(null, "Usage: pause (timeout)");
+                throw new ScriptRunTimeError(null, "Usage: pause (timeout)");
 
             Interpreter.Pause(args[0].AsUInt());
             return true;
         }
 
-        //private static bool Ping(string command, Argument[] args, bool quiet, bool force)
+        //private static bool Ping(string command, Arguments args, bool quiet, bool force)
         //{
         //    Assistant.Ping.StartPing(5);
 
         //    return true;
         //}
 
-        //private static bool Resync(string command, Argument[] args, bool quiet, bool force)
+        //private static bool Resync(string command, Arguments args, bool quiet, bool force)
         //{
         //    Client.Instance.SendToServer(new ResyncReq());
 
         //    return true;
         //}
 
-        //private static bool MessageBox(string command, Argument[] args, bool quiet, bool force)
+        //private static bool MessageBox(string command, Arguments args, bool quiet, bool force)
         //{
         //    if (args.Length != 2)
         //        throw new RunTimeError(null, "Usage: messagebox ('title') ('body')");
@@ -845,7 +870,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        public static bool Msg(string command, Argument[] args, bool quiet, bool force)
+        public static bool Msg(string command, Arguments args, bool quiet, bool force)
         {
             switch (args.Length)
             {
@@ -856,13 +881,13 @@ namespace ClassicUO.Game.Scripting
                     GameActions.Say(args[0].AsString(), hue: args[1].AsUShort());
                     break;
                 default:
-                    throw new RunTimeError(null, "Usage: msg ('text') [color]");
+                    throw new ScriptRunTimeError(null, "Usage: msg ('text') [color]");
             }
 
             return true;
         }
 
-        //private static bool Paperdoll(string command, Argument[] args, bool quiet, bool force)
+        //private static bool Paperdoll(string command, Arguments args, bool quiet, bool force)
         //{
         //    if (args.Length > 1)
         //        throw new RunTimeError(null, "Usage: paperdoll [serial]");
@@ -873,7 +898,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //public static bool Cast(string command, Argument[] args, bool quiet, bool force)
+        //public static bool Cast(string command, Arguments args, bool quiet, bool force)
         //{
         //    if (args.Length == 0)
         //        throw new RunTimeError(null, "Usage: cast 'spell' [serial]");
@@ -905,7 +930,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //private static bool WaitForTarget(string command, Argument[] args, bool quiet, bool force)
+        //private static bool WaitForTarget(string command, Arguments args, bool quiet, bool force)
         //{
         //    if (args.Length != 1)
         //        throw new RunTimeError(null, "Usage: waitfortarget (timeout)");
@@ -917,7 +942,7 @@ namespace ClassicUO.Game.Scripting
         //    return false;
         //}
 
-        //private static bool CancelTarget(string command, Argument[] args, bool quiet, bool force)
+        //private static bool CancelTarget(string command, Arguments args, bool quiet, bool force)
         //{
         //    if (args.Length != 0)
         //        throw new RunTimeError(null, "Usage: canceltarget");
@@ -928,7 +953,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //private static bool Target(string command, Argument[] args, bool quiet, bool force)
+        //private static bool Target(string command, Arguments args, bool quiet, bool force)
         //{
         //    if (args.Length != 1)
         //        throw new RunTimeError(null, "Usage: target (serial)");
@@ -941,7 +966,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //private static bool TargetType(string command, Argument[] args, bool quiet, bool force)
+        //private static bool TargetType(string command, Arguments args, bool quiet, bool force)
         //{
         //    if (args.Length < 1 || args.Length > 3)
         //        throw new RunTimeError(null, "Usage: targettype (graphic) [color] [range]");
@@ -1001,7 +1026,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //private static bool TargetGround(string command, Argument[] args, bool quiet, bool force)
+        //private static bool TargetGround(string command, Arguments args, bool quiet, bool force)
         //{
         //    if (args.Length < 1 || args.Length > 3)
         //        throw new RunTimeError(null, "Usage: targetground (graphic) [color] [range]");
@@ -1009,7 +1034,7 @@ namespace ClassicUO.Game.Scripting
         //    throw new RunTimeError(null, $"Unimplemented command {command}");
         //}
 
-        //private static bool TargetTile(string command, Argument[] args, bool quiet, bool force)
+        //private static bool TargetTile(string command, Arguments args, bool quiet, bool force)
         //{
         //    if (!(args.Length == 1 || args.Length == 3))
         //        throw new RunTimeError(null, "Usage: targettile ('last'/'current'/(x y z))");
@@ -1052,7 +1077,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //private static bool TargetTileOffset(string command, Argument[] args, bool quiet, bool force)
+        //private static bool TargetTileOffset(string command, Arguments args, bool quiet, bool force)
         //{
         //    if (args.Length != 3)
         //        throw new RunTimeError(null, "Usage: targettileoffset (x y z)");
@@ -1073,7 +1098,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //private static bool TargetTileRelative(string command, Argument[] args, bool quiet, bool force)
+        //private static bool TargetTileRelative(string command, Arguments args, bool quiet, bool force)
         //{
         //    if (args.Length != 2)
         //        throw new RunTimeError(null, "Usage: targettilerelative (serial) (range). Range may be negative.");
@@ -1135,7 +1160,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //public static bool HeadMsg(string command, Argument[] args, bool quiet, bool force)
+        //public static bool HeadMsg(string command, Arguments args, bool quiet, bool force)
         //{
         //    switch (args.Length)
         //    {
@@ -1158,7 +1183,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //public static bool SysMsg(string command, Argument[] args, bool quiet, bool force)
+        //public static bool SysMsg(string command, Arguments args, bool quiet, bool force)
         //{
         //    switch (args.Length)
         //    {
@@ -1175,7 +1200,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //public static bool DressCommand(string command, Argument[] args, bool quiet, bool force)
+        //public static bool DressCommand(string command, Arguments args, bool quiet, bool force)
         //{
         //    //we're using a named dresslist or a temporary dresslist?
         //    if (args.Length == 0)
@@ -1197,7 +1222,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //public static bool UnDressCommand(string command, Argument[] args, bool quiet, bool force)
+        //public static bool UnDressCommand(string command, Arguments args, bool quiet, bool force)
         //{
         //    //we're using a named dresslist or a temporary dresslist?
         //    if (args.Length == 0)
@@ -1219,7 +1244,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //public static bool DressConfig(string command, Argument[] args, bool quiet, bool force)
+        //public static bool DressConfig(string command, Arguments args, bool quiet, bool force)
         //{
         //    if (DressList._Temporary == null)
         //        DressList._Temporary = new DressList("dressconfig");
@@ -1236,7 +1261,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //private static bool SetTimer(string command, Argument[] args, bool quiet, bool force)
+        //private static bool SetTimer(string command, Arguments args, bool quiet, bool force)
         //{
         //    if (args.Length != 2)
         //        throw new RunTimeError(null, "Usage: settimer (timer name) (value)");
@@ -1246,7 +1271,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //private static bool RemoveTimer(string command, Argument[] args, bool quiet, bool force)
+        //private static bool RemoveTimer(string command, Arguments args, bool quiet, bool force)
         //{
         //    if (args.Length != 1)
         //        throw new RunTimeError(null, "Usage: removetimer (timer name)");
@@ -1255,7 +1280,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //private static bool CreateTimer(string command, Argument[] args, bool quiet, bool force)
+        //private static bool CreateTimer(string command, Arguments args, bool quiet, bool force)
         //{
         //    if (args.Length != 1)
         //        throw new RunTimeError(null, "Usage: createtimer (timer name)");
