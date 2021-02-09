@@ -33,26 +33,6 @@ namespace ClassicUO.Game.Scripting
 {
     public static class Commands
     {
-        private static readonly string[] abilities = new string[4] { "primary", "secondary", "stun", "disarm" };
-
-        private static readonly string[] hands = new string[3] { "left", "right", "both" };
-
-        private static readonly Dictionary<string, Direction> directions = new Dictionary<string, Direction>()
-        {
-            { "north", Direction.North },
-            { "northeast", Direction.Right },
-            { "right", Direction.Right },
-            { "east", Direction.East },
-            { "southeast", Direction.Down },
-            { "down", Direction.Down },
-            { "south", Direction.South },
-            { "southwest", Direction.Left },
-            { "left", Direction.Left },
-            { "west", Direction.West },
-            { "northwest", Direction.Up },
-            { "up", Direction.Up }
-        };
-
         // Milliseconds per tile
         private static readonly TimeSpan walkMs = TimeSpan.FromMilliseconds(400);
         private static readonly TimeSpan runMs = TimeSpan.FromMilliseconds(200);
@@ -66,31 +46,54 @@ namespace ClassicUO.Game.Scripting
 
         public static void Register()
         {
-            Interpreter.RegisterCommandHandler("findobject", CmdFindObject);
-            Interpreter.RegisterExpressionHandler("findobject", ExpFindObject);
-
-            #region Deprecated
-            Interpreter.RegisterCommandHandler("autoloot", Deprecated);
-            Interpreter.RegisterCommandHandler("toggleautoloot", Deprecated);
-            Interpreter.RegisterCommandHandler("useonce", Deprecated);
-            Interpreter.RegisterCommandHandler("clearuseonce", Deprecated);
-            #endregion
-
-            Interpreter.RegisterCommandHandler("bandageself", BandageSelf);
-            Interpreter.RegisterCommandHandler("useskill", UseSkill);
-            Interpreter.RegisterCommandHandler("msg", Msg);
+            Interpreter.RegisterCommandHandler("pushlist", PushList);
+            Interpreter.RegisterCommandHandler("findobject", FindObject);
+            Interpreter.RegisterCommandHandler("findtype", FindType);
+            Interpreter.RegisterCommandHandler("fly", UnimplementedCommand);
+            Interpreter.RegisterCommandHandler("land", UnimplementedCommand);
             Interpreter.RegisterCommandHandler("setability", SetAbility);
-            Interpreter.RegisterCommandHandler("pause", Pause);
             Interpreter.RegisterCommandHandler("attack", Attack);
             Interpreter.RegisterCommandHandler("clearhands", ClearHands);
             Interpreter.RegisterCommandHandler("clickobject", ClickObject);
+            Interpreter.RegisterCommandHandler("bandageself", BandageSelf);
             Interpreter.RegisterCommandHandler("usetype", UseType);
             Interpreter.RegisterCommandHandler("useobject", UseObject);
             Interpreter.RegisterCommandHandler("moveitem", MoveItem);
             Interpreter.RegisterCommandHandler("walk", Walk);
             Interpreter.RegisterCommandHandler("run", Run);
             Interpreter.RegisterCommandHandler("turn", Turn);
-            //Interpreter.RegisterCommandHandler("feed", Feed);
+            Interpreter.RegisterCommandHandler("useskill", UseSkill);
+            Interpreter.RegisterCommandHandler("feed", Feed);
+
+            Interpreter.RegisterCommandHandler("unsetalias", UnsetAlias);
+            Interpreter.RegisterCommandHandler("setalias", SetAlias);
+            
+            
+
+            
+            Interpreter.RegisterExpressionHandler("findobject", ExpFindObject);
+
+            #region Deprecated (but supported)
+            Interpreter.RegisterCommandHandler("useonce", UseOnce);
+            Interpreter.RegisterCommandHandler("clearuseonce", Deprecated);
+            #endregion
+
+            #region Deprecated (not supported)
+            Interpreter.RegisterCommandHandler("autoloot", Deprecated);
+            Interpreter.RegisterCommandHandler("toggleautoloot", Deprecated);
+            #endregion
+
+
+            
+            Interpreter.RegisterCommandHandler("msg", Msg);
+
+            Interpreter.RegisterCommandHandler("pause", Pause);
+
+
+
+
+
+            
             Interpreter.RegisterCommandHandler("rename", Rename);
             Interpreter.RegisterCommandHandler("shownames", ShowNames);
             Interpreter.RegisterCommandHandler("togglehands", ToggleHands);
@@ -99,14 +102,13 @@ namespace ClassicUO.Game.Scripting
             //Interpreter.RegisterCommandHandler("undress", UnDressCommand);
             //Interpreter.RegisterCommandHandler("dressconfig", DressConfig);
             //Interpreter.RegisterCommandHandler("togglescavenger", ToggleScavenger);
-            Interpreter.RegisterCommandHandler("unsetalias", UnsetAlias);
-            Interpreter.RegisterCommandHandler("setalias", SetAlias);
+            
             //Interpreter.RegisterCommandHandler("promptalias", PromptAlias);
             //Interpreter.RegisterCommandHandler("waitforgump", WaitForGump);
             //Interpreter.RegisterCommandHandler("clearjournal", ClearJournal);
             //Interpreter.RegisterCommandHandler("waitforjournal", WaitForJournal);
             //Interpreter.RegisterCommandHandler("poplist", PopList);
-            //Interpreter.RegisterCommandHandler("pushlist", PushList);
+            Interpreter.RegisterCommandHandler("pushlist", PushList);
             //Interpreter.RegisterCommandHandler("removelist", RemoveList);
             //Interpreter.RegisterCommandHandler("createlist", CreateList);
             //Interpreter.RegisterCommandHandler("clearlist", ClearList);
@@ -130,8 +132,8 @@ namespace ClassicUO.Game.Scripting
             //Interpreter.RegisterCommandHandler("createtimer", CreateTimer);
 
 
-            Interpreter.RegisterCommandHandler("fly", UnimplementedCommand);
-            Interpreter.RegisterCommandHandler("land", UnimplementedCommand);
+
+
             Interpreter.RegisterCommandHandler("info", UnimplementedCommand);
             Interpreter.RegisterCommandHandler("playmacro", UnimplementedCommand);
             Interpreter.RegisterCommandHandler("playsound", UnimplementedCommand);
@@ -197,36 +199,439 @@ namespace ClassicUO.Game.Scripting
             Interpreter.RegisterCommandHandler("getfriend", UnimplementedCommand);
         }
 
-        private static bool UnimplementedCommand(string command, Arguments args, bool quiet, bool force)
+        private static bool PushList(string command, ArgumentList args, bool quiet, bool force)
+        {
+            try
+            {
+                var name = args.NextAs<string>(ArgumentList.ArgumentType.Mandatory);
+                var values = args.NextAsArray<string>(ArgumentList.ArgumentType.Mandatory);
+                var pos = args.NextAs<string>(ArgumentList.ArgumentType.Mandatory);
+                bool front = (pos == "force");
+                foreach (var val in values)
+                {
+                    //Interpreter.PushList(name, new Argument(), front, force);
+                }
+                return true;
+            }
+            catch (ScriptRunTimeError ex)
+            {
+                throw new ScriptSyntaxError("Usage: pushlist ('list name') ('element value') ['front'/'back']", ex);
+            }
+        }
+
+        private static bool SetAbility(string command, ArgumentList args, bool quiet, bool force)
+        {
+            try
+            {
+                var ability = args.NextAs<string>(ArgumentList.ArgumentType.Mandatory);
+                var toggle = args.NextAs<string>(ArgumentList.ArgumentType.Mandatory);
+                if (toggle == "on")
+                {
+                    switch (ability)
+                    {
+                        case "primary":
+                            GameActions.UsePrimaryAbility();
+                            break;
+                        case "secondary":
+                            GameActions.UseSecondaryAbility();
+                            break;
+                        case "stun":
+                            GameActions.RequestStun();
+                            break;
+                        case "disarm":
+                            GameActions.RequestDisarm();
+                            break;
+                    }
+                }
+                else
+                {
+                    GameActions.ClearAbility();
+                }
+                return true;
+            }
+            catch (ScriptRunTimeError ex)
+            {
+                throw new ScriptSyntaxError("Usage: setability ('primary'/'secondary'/'stun'/'disarm') ['on'/'off']", ex);
+            }
+        }
+
+        private static bool Attack(string command, ArgumentList args, bool quiet, bool force)
+        {
+            try
+            {
+                var serial = args.NextAs<uint>(ArgumentList.ArgumentType.Mandatory);
+                GameActions.Attack(serial);
+                return true;
+            }
+            catch (ScriptRunTimeError ex)
+            {
+                throw new ScriptSyntaxError("Usage: attack (serial)", ex);
+            }
+        }
+
+        private static bool ClearHands(string command, ArgumentList args, bool quiet, bool force)
+        {
+            try
+            {
+                var hands = args.NextAsHand(ArgumentList.ArgumentType.Mandatory);
+                if (hands == ArgumentList.Hands.Both)
+                {
+                    GameActions.ClearEquipped((IO.ItemExt_PaperdollAppearance)ArgumentList.Hands.Left);
+                    GameActions.ClearEquipped((IO.ItemExt_PaperdollAppearance)ArgumentList.Hands.Right);
+                }
+                else GameActions.ClearEquipped((IO.ItemExt_PaperdollAppearance)hands);
+                // TODO: check if hands are cleared to return false on fail (can you fail to clear hands? Maybe trying to unequipe during use of wand, or cast of spell?)
+                return true;
+            }
+            catch (ScriptRunTimeError ex)
+            {
+                throw new ScriptSyntaxError("Usage: clearhands ('left'/'right'/'both')", ex);
+            }
+        }
+
+        private static bool ClickObject(string command, ArgumentList args, bool quiet, bool force)
+        {
+            try
+            {
+                var serial = args.NextAsSerial(ArgumentList.ArgumentType.Mandatory);
+                GameActions.SingleClick(serial);
+                return true;
+            }
+            catch (ScriptRunTimeError ex)
+            {
+                throw new ScriptSyntaxError("Usage: clickobject (serial)", ex);
+            }
+        }
+
+        private static bool BandageSelf(string command, ArgumentList args, bool quiet, bool force)
+        {
+            GameActions.BandageSelf();
+            // TODO: maybe return false if no badages or other constraints?
+            return true;
+        }
+
+        private static bool UseType(string command, ArgumentList args, bool quiet, bool force)
+        {
+            try
+            {
+                var graphic = args.NextAs<ushort>(ArgumentList.ArgumentType.Mandatory);
+                Item item = CmdFindEntityByGraphic(graphic,
+                    args.NextAs<ushort>(),
+                    args.NextAsSource(),
+                    args.NextAs<int>());
+
+                if (item != null)
+                    GameActions.DoubleClick(item.Serial);
+                else
+                    throw new ScriptRunTimeError(null, $"Script Error: Couldn't find '{graphic.ToString("X3")}'");
+
+                return true;
+            }
+            catch (ScriptRunTimeError ex)
+            {
+                throw new ScriptSyntaxError("Usage: usetype (graphic) [color] [source] [range or search level]", ex);
+            }
+        }
+
+        private static bool UseObject(string command, ArgumentList args, bool quiet, bool force)
+        {
+            try
+            {
+                var serial = args.NextAsSerial(ArgumentList.ArgumentType.Mandatory);
+                GameActions.DoubleClick(serial);
+                return true;
+            }
+            catch (ScriptRunTimeError ex)
+            {
+                throw new ScriptSyntaxError("Usage: useobject (serial)", ex);
+            }
+        }
+
+        private static bool UseOnce(string command, ArgumentList args, bool quiet, bool force)
+        {
+            try
+            {
+                var graphic = args.NextAs<ushort>(ArgumentList.ArgumentType.Mandatory);
+                Item item = CmdFindEntityByGraphic(graphic, args.NextAs<ushort>());
+
+                if (item != null)
+                    GameActions.DoubleClick(item.Serial);
+                else
+                    throw new ScriptRunTimeError(null, $"Script Error: Couldn't find '{graphic.ToString("X3")}'");
+
+                return true;
+            }
+            catch (ScriptRunTimeError ex)
+            {
+                throw new ScriptSyntaxError("Usage: useonce (graphic) [color]", ex);
+            }
+        }
+
+        private static bool MoveItem(string command, ArgumentList args, bool quiet, bool force)
+        {
+            try
+            {
+                var serial = args.NextAsSerial(ArgumentList.ArgumentType.Mandatory);
+
+                // Destination can be both a Serial or Source (backpack, ground, etc)
+                uint destination;
+                if (!args.TryAsSerial(out destination))
+                {
+                    var source = args.NextAsSource(ArgumentList.ArgumentType.Mandatory);
+                    destination = World.Player.FindItemByLayer((Layer)source).Serial;
+                }
+                //offest = new ArgumentList.Position((int)World.Player.X, (int)World.Player.Y, (int)World.Player.Z);
+                var x = args.NextAs<int>();
+                var y = args.NextAs<int>();
+                var z = args.NextAs<int>();
+                var amount = args.NextAs<int>();
+
+                GameActions.PickUp(serial, 0, 0, amount);
+                GameActions.DropItem(
+                    serial,
+                    x+ World.Player.X,
+                    y + World.Player.Y,
+                    z + World.Player.Z,
+                    destination);
+
+                return true;
+            }
+            catch (ScriptRunTimeError ex)
+            {
+                throw new ScriptSyntaxError("Usage: moveitem (serial) (destination) [(x, y, z)] [amount]", ex);
+            }
+        }
+
+        private static bool Walk(string command, ArgumentList args, bool quiet, bool force)
+        {
+            try
+            {
+                var direction = args.NextAsDirection(ArgumentList.ArgumentType.Mandatory);
+
+                //if (World.Player.Direction != (Direction)direction.First())
+                //{
+                //    // if the player is not currently facing into the direction of the run
+                //    // then the player will turn first, and run next - this helps so that 
+                //    // scripts do not need to include "turn" commands or call "run" multiple
+                //    // times just to achieve the same result
+                //    movementCooldown = DateTime.UtcNow + turnMs;
+                //    World.Player.Walk((Direction)direction.First(), true);
+                //    return false;
+                //}
+
+                var movementDelay = ProfileManager.CurrentProfile.AlwaysRun ? runMs : walkMs;
+
+                if (World.Player.FindItemByLayer(Layer.Mount) != null)
+                {
+                    if (ProfileManager.CurrentProfile.AlwaysRun)
+                    {
+                        movementDelay = mountedRunMs;
+                    }
+                    else
+                    {
+                        movementDelay = mountedWalkMs;
+                    }
+                }
+
+                movementCooldown = DateTime.UtcNow + movementDelay;
+
+                foreach (var dir in direction)
+                {
+                    World.Player.Walk((Direction)dir, ProfileManager.CurrentProfile.AlwaysRun);
+                    //if (!World.Player.Walk((Direction)dir, ProfileManager.CurrentProfile.AlwaysRun))
+                    //return false;
+                }
+                return true;
+            }
+            catch (ScriptRunTimeError ex)
+            {
+                throw new ScriptSyntaxError("Usage: walk ('direction name')", ex);
+            }
+        }
+
+        private static bool Turn(string command, ArgumentList args, bool quiet, bool force)
+        {
+            try
+            {
+                var direction = args.NextAsDirection(ArgumentList.ArgumentType.Mandatory);
+
+                if (DateTime.UtcNow < movementCooldown)
+                {
+                    return false;
+                }
+
+                foreach (var dir in direction)
+                {
+                    if (World.Player.Direction != (Direction)dir)
+                    {
+                        movementCooldown = DateTime.UtcNow + turnMs;
+                        if(!World.Player.Walk((Direction)dir, true))
+                            return false;
+                    }
+                }
+                return true;
+            }
+            catch (ScriptRunTimeError ex)
+            {
+                throw new ScriptSyntaxError("Usage: walk ('direction name')", ex);
+            }
+        }
+
+        private static bool Run(string command, ArgumentList args, bool quiet, bool force)
+        {
+            try
+            {
+                var direction = args.NextAsDirection(ArgumentList.ArgumentType.Mandatory);
+
+                if(DateTime.UtcNow < movementCooldown)
+                {
+                    return false;
+                }
+
+                //if (World.Player.Direction != (Direction)direction.First())
+                //{
+                //    // if the player is not currently facing into the direction of the run
+                //    // then the player will turn first, and run next - this helps so that 
+                //    // scripts do not need to include "turn" commands or call "run" multiple
+                //    // times just to achieve the same result
+                //    movementCooldown = DateTime.UtcNow + turnMs;
+                //    World.Player.Walk((Direction)direction.First(), true);
+                //    return false;
+                //}
+
+                var movementDelay = runMs;
+
+                if (World.Player.FindItemByLayer(Layer.Mount) != null)
+                {
+                    movementDelay = mountedRunMs;
+                }
+
+                movementCooldown = DateTime.UtcNow + movementDelay;
+
+                foreach (var dir in direction)
+                {
+                    if (!World.Player.Walk((Direction)dir, true))
+                        return false;
+                }
+                return true;
+            }
+            catch (ScriptRunTimeError ex)
+            {
+                throw new ScriptSyntaxError("Usage: walk ('direction name')", ex);
+            }
+        }
+
+        private static bool UseSkill(string command, ArgumentList args, bool quiet, bool force)
+        {
+            try
+            {
+                if (args[0].As<string>() == "last")
+                {
+                    GameActions.UseLastSkill();
+                    return true;
+                }
+                string skillName = args[0].As<string>();
+
+                if (!GameActions.UseSkill(skillName))
+                {
+                    throw new ScriptRunTimeError(null, "That skill  is not usable");
+                }
+                return true;
+            }
+            catch (ScriptRunTimeError ex)
+            {
+                throw new ScriptSyntaxError("Usage: useskill ('skill name'/'last')", ex);
+            }
+        }
+
+        private static bool Feed(string command, ArgumentList args, bool quiet, bool force)
+        {
+            try
+            {
+                var serial = args.NextAsSerial(ArgumentList.ArgumentType.Mandatory);
+                List<ushort> foodList = new List<ushort>();
+                //ushort graphic;
+                //if (!args.TryAsGraphic(out graphic))
+                //{
+                //    var source = args.NextAsSource(ArgumentList.ArgumentType.Mandatory);
+                //    destination = World.Player.FindItemByLayer((Layer)source).Serial;
+                //}
+                //else foodList.Add(graphic)
+                var color = args.NextAs<ushort>();
+                var amount = args.NextAs<int>();
+
+                //Item item = CmdFindObjectBySerial(serial, color);//, source, range);
+                //return item != null && item.Amount > amount;
+                return true;
+            }
+            catch (ScriptRunTimeError ex)
+            {
+                throw new ScriptSyntaxError("Usage: feed (serial) ('food name'/'food group'/'any'/graphic) [color] [amount]", ex);
+            }
+        }
+
+        private static bool FindObject(string command, ArgumentList args, bool quiet, bool force)
+        {
+            try
+            {
+                var serial = args.NextAsSerial(ArgumentList.ArgumentType.Mandatory);
+                var color = args.NextAs<ushort>();
+                var source = args.NextAsSource();
+                var amount = args.NextAs<int>();
+                var range = args.NextAs<int>();
+
+                Entity entity = CmdFindEntityBySerial(serial, color, source, range);
+                if (entity != null)
+                {
+                    if ((entity is Item item && item.Amount > amount) || entity is Mobile)
+                        Interpreter.SetAlias<uint>("found", entity.Serial); // should this be a scope variable?
+                    return true;
+                }
+                else return false;
+            }
+            catch (ScriptRunTimeError ex)
+            {
+                throw new ScriptSyntaxError("Usage: findobject (serial) [color] [source] [amount] [range]", ex);
+            }
+        }
+
+        private static bool FindType(string command, ArgumentList args, bool quiet, bool force)
+        {
+            try
+            {
+                var graphic = args.NextAs<ushort>(ArgumentList.ArgumentType.Mandatory);
+                var color = args.NextAs<ushort>();
+                var source = args.NextAsSource();
+                var amount = args.NextAs<int>();
+                var range = args.NextAs<int>();
+
+                Item item = CmdFindEntityByGraphic(graphic, color, source, range);
+                return item != null && item.Amount > amount;
+            }
+            catch (ScriptRunTimeError ex)
+            {
+                throw new ScriptSyntaxError("Usage: findtype (graphic) [color] [source] [amount] [range or search level]", ex);
+            }
+        }
+
+
+        private static bool UnimplementedCommand(string command, ArgumentList args, bool quiet, bool force)
         {
             GameActions.Print($"Unimplemented command: '{command}'", type: MessageType.System);
             return true;
         }
 
-        private static bool Deprecated(string command, Arguments args, bool quiet, bool force)
+        private static bool Deprecated(string command, ArgumentList args, bool quiet, bool force)
         {
             GameActions.Print($"Deprecated command: '{command}'", type: MessageType.System);
             return true;
         }
 
-        private static bool CmdFindObject(string command, Arguments args, bool quiet, bool force)
+        
+
+        private static bool ExpFindObject(string expression, ArgumentList args, bool quiet)
         {
-            // UOStream - findobject (serial) [color] [source] [amount] [range]
-            var serial = args.NextAsSerial(Arguments.ArgumentType.Mandatory);
-            var color = args.NextAsColor();
-            var source = "backpack"; //args.NextAsSource();
-            var amount = 1; // args.NextAsAmount();
-            var range = 5; // args.NextAsRange();
-            
-            // Check if serial exist
-            var graphic = World.GetOrCreateItem(serial).Graphic;
-            var item = (source == "backpack") ? World.Player.FindItem(graphic) : World.Player.FindItemByTypeOnGroundWithHueInRange(graphic, color, range);
-            return item != null && item.Amount > amount;
- 
-        }
-        private static bool ExpFindObject(string expression, Arguments args, bool quiet)
-        {
-            return CmdFindObject(expression, args, quiet, false);
+            return FindObject(expression, args, quiet, false);
         }
 
 
@@ -252,379 +657,42 @@ namespace ClassicUO.Game.Scripting
         //    return false;
         //}
 
-        private static bool SetAbility(string command, Arguments args, bool quiet, bool force)
-        {
-            var ability = args[0].AsString();
+        
 
-            if (args.Length < 1 || !abilities.Contains(ability))
-            {
-                throw new ScriptRunTimeError(null, "Usage: setability ('primary'/'secondary'/'stun'/'disarm') ['on'/'off']");
-            }
+        
 
-            if (args.Length == 2 && args[1].AsString() == "on" || args.Length == 1)
-            {
-                switch (ability)
-                {
-                    case "primary":
-                        GameActions.UsePrimaryAbility();
-                        break;
-                    case "secondary":
-                        GameActions.UseSecondaryAbility();
-                        break;
-                    case "stun":
-                        GameActions.RequestStun();
-                        break;
-                    case "disarm":
-                        GameActions.RequestDisarm();
-                        break;
-                    default:
-                        break;
-                }
-            }
-            else if (args.Length == 2 && args[1].AsString() == "off")
-            {
-                GameActions.ClearAbility();
-            }
+        
 
-            return true;
-        }
+       
 
-        private static bool Attack(string command, Arguments args, bool quiet, bool force)
-        {
-            if (args.Length < 1)
-                throw new ScriptRunTimeError(null, "Usage: attack (serial)");
+        
 
-            GameActions.Attack(args[0].AsSerial());
-
-            return true;
-        }
-
-        private static bool ClearHands(string command, Arguments args, bool quiet, bool force)
-        {
-            if (args.Length == 0 || !hands.Contains(args[0].AsString()))
-                throw new ScriptRunTimeError(null, "Usage: clearhands ('left'/'right'/'both')");
-
-            switch (args[0].AsString().ToLower())
-            {
-                case "left":
-                    GameActions.ClearEquipped(IO.ItemExt_PaperdollAppearance.Left);
-                    break;
-                case "right":
-                    GameActions.ClearEquipped(IO.ItemExt_PaperdollAppearance.Right);
-                    break;
-                // case "both":
-                default:
-                    GameActions.ClearEquipped(IO.ItemExt_PaperdollAppearance.Left);
-                    GameActions.ClearEquipped(IO.ItemExt_PaperdollAppearance.Right);
-                    break;
-            }
-
-            return true;
-        }
-
-        private static bool ClickObject(string command, Arguments args, bool quiet, bool force)
-        {
-            if (args.Length == 0)
-                throw new ScriptRunTimeError(null, "Usage: clickobject (serial)");
-
-            uint serial = args[0].AsSerial();
-
-            GameActions.SingleClick(serial);
-
-            return true;
-        }
-
-        private static bool BandageSelf(string command, Arguments args, bool quiet, bool force)
-        {
-            GameActions.BandageSelf();
-            return true;
-        }
-
-        private static bool UseType(string command, Arguments args, bool quiet, bool force)
-        {
-            if (args.Length < 1)
-            {
-                throw new ScriptRunTimeError(null, "Usage: usetype (graphic) [color] [source] [range or search level]");
-            }
-
-            var searchGround = false;
-
-            ushort hue = 0xFFFF;
-            Item source = World.Player.FindItemByLayer(Layer.Backpack);
-
-            var graphic = args[0].AsUShort();
-            var graphicString = args[0].AsString();
-
-            if (args.Length > 1 && string.Compare(args[1].AsString(), "any", true) != 0)
-            {
-                hue = args[1].AsUShort();
-            }
-
-            if (args.Length > 2)
-            {
-                if (string.Compare(args[2].AsString(), "ground", true) == 0)
-                {
-                    searchGround = true;
-                }
-                else
-                {
-                    searchGround = false;
-                    source = World.Items.Get(args[2].AsSerial());
-                }
-            }
-
-            var range = args.Length > 3 ? args[3].AsInt() : 0;
-
-            Item item;
-
-            if (searchGround)
-            {
-                item = World.Player.FindItemByTypeOnGroundWithHueInRange(graphic, hue, range);
-            }
-            else
-            {
-                item = World.Player
-                    .FindItemByLayer(Layer.Backpack)
-                    .FindItem(graphic, hue);
-            }
-
-            if (item != null)
-            {
-                GameActions.DoubleClick(item);
-            }
-            else if (!quiet)
-            {
-                GameActions.Print($"Script Error: Couldn't find '{graphicString}'", type: MessageType.System);
-            }
-
-            return true;
-        }
-
-        private static bool UseObject(string command, Arguments args, bool quiet, bool force)
-        {
-            if (args.Length == 0)
-            {
-                throw new ScriptRunTimeError(null, "Usage: useobject (serial)");
-            }
-
-            var serial = args[0].AsSerial();
-
-            if (!SerialHelper.IsValid(serial) && !quiet)
-            {
-                GameActions.Print("Object not found.", type: MessageType.System);
-            }
-            else
-            {
-                GameActions.DoubleClick(serial);
-            }
-
-            return true;
-        }
-
-        private static bool MoveItem(string command, Arguments args, bool quiet, bool force)
-        {
-            if (args.Length < 2)
-            {
-                throw new ScriptRunTimeError(null, "Usage: moveitem (serial) (destination) [(x, y, z)] [amount]");
-            }
-
-            uint serial = args[0].AsSerial();
-            uint destination = args[1].AsSerial();
-
-            int x = 0;
-            int y = 0;
-            int z = 0;
-
-            int amount = -1;
-
-            if (args.Length >= 5)
-            {
-                x = args[2].AsInt();
-                y = args[3].AsInt();
-                z = args[4].AsInt();
-            }
-
-            if (args.Length == 6)
-            {
-                amount = args[5].AsInt();
-            }
-
-            GameActions.PickUp(serial, 0, 0, amount);
-            GameActions.DropItem(
-                serial,
-                x + World.Player.X,
-                y + World.Player.Y,
-                z + World.Player.Z,
-                destination);
-
-            return true;
-        }
-
-        private static bool Walk(string command, Arguments args, bool quiet, bool force)
-        {
-            if (args.Length != 1)
-            {
-                throw new ScriptRunTimeError(null, "Usage: walk ('direction name')");
-            }
-
-            if (!directions.TryGetValue(args[0].AsString().ToLower(), out var dir))
-            {
-                throw new ScriptRunTimeError(null, "Usage: walk ('direction name')");
-            }
-
-            if (DateTime.UtcNow < movementCooldown)
-            {
-                return false;
-            }
-
-            if (World.Player.Direction != dir)
-            {
-                // if the player is not currently facing into the direction of the run
-                // then the player will turn first, and run next - this helps so that 
-                // scripts do not need to include "turn" commands or call "run" multiple
-                // times just to achieve the same result
-                movementCooldown = DateTime.UtcNow + turnMs;
-                World.Player.Walk(dir, true);
-                return false;
-            }
-
-            var movementDelay = ProfileManager.CurrentProfile.AlwaysRun ? runMs : walkMs;
-
-            if (World.Player.FindItemByLayer(Layer.Mount) != null)
-            {
-                if (ProfileManager.CurrentProfile.AlwaysRun)
-                {
-                    movementDelay = mountedRunMs;
-                }
-                else
-                {
-                    movementDelay = mountedWalkMs;
-                }
-            }
-
-            movementCooldown = DateTime.UtcNow + movementDelay;
-
-            return World.Player.Walk(dir, ProfileManager.CurrentProfile.AlwaysRun);
-        }
-
-        private static bool Turn(string command, Arguments args, bool quiet, bool force)
-        {
-            if (args.Length != 1)
-            {
-                throw new ScriptRunTimeError(null, "Usage: turn ('direction name')");
-            }
-
-            if (!directions.TryGetValue(args[0].AsString().ToLower(), out var dir))
-            {
-                throw new ScriptRunTimeError(null, "Usage: turn ('direction name')");
-            }
-
-            if (DateTime.UtcNow < movementCooldown)
-            {
-                return false;
-            }
-
-            if (World.Player.Direction != dir)
-            {
-                movementCooldown = DateTime.UtcNow + turnMs;
-                World.Player.Walk(dir, true);
-            }
-
-            return true;
-        }
-
-        private static bool Run(string command, Arguments args, bool quiet, bool force)
-        {
-            if (args.Length != 1)
-            {
-                throw new ScriptRunTimeError(null, "Usage: run ('direction name')");
-            }
-
-            if (!directions.TryGetValue(args[0].AsString().ToLower(), out var dir))
-            {
-                throw new ScriptRunTimeError(null, "Usage: run ('direction name')");
-            }
-
-            if (DateTime.UtcNow < movementCooldown)
-            {
-                return false;
-            }
-
-            if (World.Player.Direction != dir)
-            {
-                // if the player is not currently facing into the direction of the run
-                // then the player will turn first, and run next - this helps so that 
-                // scripts do not need to include "turn" commands or call "run" multiple
-                // times just to achieve the same result
-                movementCooldown = DateTime.UtcNow + turnMs;
-                World.Player.Walk(dir, true);
-                return false;
-            }
-
-            var movementDelay = runMs;
-
-            if (World.Player.FindItemByLayer(Layer.Mount) != null)
-            {
-                movementDelay = mountedRunMs;
-            }
-
-            movementCooldown = DateTime.UtcNow + movementDelay;
-
-            return World.Player.Walk(dir, true);
-        }
-
-        private static bool UseSkill(string command, Arguments args, bool quiet, bool force)
-        {
-            if (args.Length == 0)
-                throw new ScriptRunTimeError(null, "Usage: useskill ('skill name'/'last')");
-
-            if (args[0].AsString() == "last")
-            {
-                GameActions.UseLastSkill();
-                return true;
-            }
-
-            string skillName = args[0].AsString();
-
-            if (!GameActions.UseSkill(skillName))
-            {
-                throw new ScriptRunTimeError(null, "That skill  is not usable");
-            }
-
-            return true;
-        }
-
-        //private static bool Feed(string command, Arguments args, bool quiet, bool force)
-        //{
-        //    return true;
-        //}
-
-        private static bool Rename(string command, Arguments args, bool quiet, bool force)
+        private static bool Rename(string command, ArgumentList args, bool quiet, bool force)
         {
             if (args.Length != 2)
             {
                 throw new ScriptRunTimeError(null, "Usage: rename (serial) ('name')");
             }
 
-            var target = args[0].AsSerial();
-            var name = args[1].AsString();
+            var target = args[0].As<uint>();
+            var name = args[1].As<string>();
 
             GameActions.Rename(target, name);
 
             return true;
         }
 
-        private static bool SetAlias(string command, Arguments args, bool quiet, bool force)
+        private static bool SetAlias(string command, ArgumentList args, bool quiet, bool force)
         {
             if (args.Length != 2)
                 throw new ScriptRunTimeError(null, "Usage: setalias ('name') [serial]");
 
-            Interpreter.SetAlias(args[0].AsString(), args[1].AsSerial());
+            Interpreter.SetAlias(args[0].As<string>(), args[1].As<uint>());
 
             return true;
         }
 
-        //private static bool PromptAlias(string command, Arguments args, bool quiet, bool force)
+        //private static bool PromptAlias(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    Interpreter.Pause(60000);
 
@@ -633,7 +701,7 @@ namespace ClassicUO.Game.Scripting
         //        _hasPrompt = true;
         //        Targeting.OneTimeTarget((location, serial, p, gfxid) =>
         //        {
-        //            Interpreter.SetAlias(args[0].AsString(), serial);
+        //            Interpreter.SetAlias(args[0].As<string>(), serial);
         //            Interpreter.Unpause();
         //        });
         //        return false;
@@ -643,12 +711,12 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //private static bool WaitForGump(string command, Arguments args, bool quiet, bool force)
+        //private static bool WaitForGump(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    if (args.Length < 2)
         //        throw new RunTimeError(null, "Usage: waitforgump (gump id/'any') (timeout)");
 
-        //    bool any = args[0].AsString() == "any";
+        //    bool any = args[0].As<string>() == "any";
 
         //    if (any)
         //    {
@@ -667,19 +735,19 @@ namespace ClassicUO.Game.Scripting
         //    return false;
         //}
 
-        //private static bool ClearJournal(string command, Arguments args, bool quiet, bool force)
+        //private static bool ClearJournal(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    Journal.Clear();
 
         //    return true;
         //}
 
-        //private static bool WaitForJournal(string command, Arguments args, bool quiet, bool force)
+        //private static bool WaitForJournal(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    if (args.Length < 2)
         //        throw new RunTimeError(null, "Usage: waitforjournal ('text') (timeout) ['author'/'system']");
 
-        //    if (!Journal.ContainsSafe(args[0].AsString()))
+        //    if (!Journal.ContainsSafe(args[0].As<string>()))
         //    {
         //        Interpreter.Timeout(args[1].AsUInt(), () => { return true; });
         //        return false;
@@ -688,117 +756,102 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //private static bool PopList(string command, Arguments args, bool quiet, bool force)
+        //private static bool PopList(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    if (args.Length != 2)
         //        throw new RunTimeError(null, "Usage: poplist ('list name') ('element value'/'front'/'back')");
 
-        //    if (args[1].AsString() == "front")
+        //    if (args[1].As<string>() == "front")
         //    {
         //        if (force)
-        //            while (Interpreter.PopList(args[0].AsString(), true)) { }
+        //            while (Interpreter.PopList(args[0].As<string>(), true)) { }
         //        else
-        //            Interpreter.PopList(args[0].AsString(), true);
+        //            Interpreter.PopList(args[0].As<string>(), true);
         //    }
-        //    else if (args[1].AsString() == "back")
+        //    else if (args[1].As<string>() == "back")
         //    {
         //        if (force)
-        //            while (Interpreter.PopList(args[0].AsString(), false)) { }
+        //            while (Interpreter.PopList(args[0].As<string>(), false)) { }
         //        else
-        //            Interpreter.PopList(args[0].AsString(), false);
+        //            Interpreter.PopList(args[0].As<string>(), false);
         //    }
         //    else
         //    {
         //        if (force)
-        //            while (Interpreter.PopList(args[0].AsString(), args[1])) { }
+        //            while (Interpreter.PopList(args[0].As<string>(), args[1])) { }
         //        else
-        //            Interpreter.PopList(args[0].AsString(), args[1]);
+        //            Interpreter.PopList(args[0].As<string>(), args[1]);
         //    }
 
         //    return true;
         //}
 
-        //private static bool PushList(string command, Arguments args, bool quiet, bool force)
-        //{
-        //    if (args.Length < 2 || args.Length > 3)
-        //        throw new RunTimeError(null, "Usage: pushlist ('list name') ('element value') ['front'/'back']");
+        
 
-        //    bool front = false;
-        //    if (args.Length == 3)
-        //    {
-        //        if (args[2].AsString() == "front")
-        //            front = true;
-        //    }
-
-        //    Interpreter.PushList(args[0].AsString(), args[1], front, force);
-
-        //    return true;
-        //}
-
-        //private static bool RemoveList(string command, Arguments args, bool quiet, bool force)
+        //private static bool RemoveList(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    if (args.Length != 1)
         //        throw new RunTimeError(null, "Usage: removelist ('list name')");
 
-        //    Interpreter.DestroyList(args[0].AsString());
+        //    Interpreter.DestroyList(args[0].As<string>());
 
         //    return true;
         //}
 
-        //private static bool CreateList(string command, Arguments args, bool quiet, bool force)
+        //private static bool CreateList(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    if (args.Length != 1)
         //        throw new RunTimeError(null, "Usage: createlist ('list name')");
 
-        //    Interpreter.CreateList(args[0].AsString());
+        //    Interpreter.CreateList(args[0].As<string>());
 
         //    return true;
         //}
 
-        //private static bool ClearList(string command, Arguments args, bool quiet, bool force)
+        //private static bool ClearList(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    if (args.Length != 1)
         //        throw new RunTimeError(null, "Usage: clearlist ('list name')");
 
-        //    Interpreter.ClearList(args[0].AsString());
+        //    Interpreter.ClearList(args[0].As<string>());
 
         //    return true;
         //}
 
-        private static bool UnsetAlias(string command, Arguments args, bool quiet, bool force)
+        private static bool UnsetAlias(string command, ArgumentList args, bool quiet, bool force)
         {
             if (args.Length == 0)
                 throw new ScriptRunTimeError(null, "Usage: unsetalias (string)");
 
-            Interpreter.SetAlias(args[0].AsString(), 0);
+            Interpreter.SetAlias(args[0].As<string>(), 0);
 
             return true;
         }
 
-        private static bool ShowNames(string command, Arguments args, bool quiet, bool force)
+        private static bool ShowNames(string command, ArgumentList args, bool quiet, bool force)
         {
             if (args.Length == 0)
                 throw new ScriptRunTimeError(null, "Usage: shownames ['mobiles'/'corpses']");
 
-            if (args[0].AsString() == "mobiles")
+            if (args[0].As<string>() == "mobiles")
             {
                 GameActions.AllNames(GameActions.AllNamesTargets.Mobiles);
             }
-            else if (args[0].AsString() == "corpses")
+            else if (args[0].As<string>() == "corpses")
             {
                 GameActions.AllNames(GameActions.AllNamesTargets.Corpses);
             }
             return true;
         }
 
-        public static bool ToggleHands(string command, Arguments args, bool quiet, bool force)
+        public static bool ToggleHands(string command, ArgumentList args, bool quiet, bool force)
         {
             if (args.Length == 0)
             {
                 throw new ScriptRunTimeError(null, "Usage: togglehands ('left'/'right')");
             }
 
-            switch (args[0].AsString().ToLower())
+            switch (args[0].As<string>())
             {
                 case "left":
                     GameActions.ToggleEquip(IO.ItemExt_PaperdollAppearance.Left);
@@ -813,14 +866,14 @@ namespace ClassicUO.Game.Scripting
             return true;
         }
 
-        public static bool EquipItem(string command, Arguments args, bool quiet, bool force)
+        public static bool EquipItem(string command, ArgumentList args, bool quiet, bool force)
         {
             if (args.Length < 1)
             {
                 throw new ScriptRunTimeError(null, "Usage: equipitem (serial)");
             }
 
-            var item = (Item)World.Get(args[0].AsSerial());
+            var item = (Item)World.Get(args[0].As<uint>());
 
             if (item != null)
             {
@@ -830,55 +883,55 @@ namespace ClassicUO.Game.Scripting
             return true;
         }
 
-        //public static bool ToggleScavenger(string command, Arguments args, bool quiet, bool force)
+        //public static bool ToggleScavenger(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    ScavengerAgent.Instance.ToggleEnabled();
 
         //    return true;
         //}
 
-        private static bool Pause(string command, Arguments args, bool quiet, bool force)
+        private static bool Pause(string command, ArgumentList args, bool quiet, bool force)
         {
             if (args.Length == 0)
                 throw new ScriptRunTimeError(null, "Usage: pause (timeout)");
 
-            Interpreter.Pause(args[0].AsUInt());
+            Interpreter.Pause(args[0].As<uint>());
             return true;
         }
 
-        //private static bool Ping(string command, Arguments args, bool quiet, bool force)
+        //private static bool Ping(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    Assistant.Ping.StartPing(5);
 
         //    return true;
         //}
 
-        //private static bool Resync(string command, Arguments args, bool quiet, bool force)
+        //private static bool Resync(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    Client.Instance.SendToServer(new ResyncReq());
 
         //    return true;
         //}
 
-        //private static bool MessageBox(string command, Arguments args, bool quiet, bool force)
+        //private static bool MessageBox(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    if (args.Length != 2)
         //        throw new RunTimeError(null, "Usage: messagebox ('title') ('body')");
 
-        //    System.Windows.Forms.MessageBox.Show(args[0].AsString(), args[1].AsString());
+        //    System.Windows.Forms.MessageBox.Show(args[0].As<string>(), args[1].As<string>());
 
         //    return true;
         //}
 
-        public static bool Msg(string command, Arguments args, bool quiet, bool force)
+        public static bool Msg(string command, ArgumentList args, bool quiet, bool force)
         {
             switch (args.Length)
             {
                 case 1:
-                    GameActions.Say(args[0].AsString());
+                    GameActions.Say(args[0].As<string>());
                     break;
                 case 2:
-                    GameActions.Say(args[0].AsString(), hue: args[1].AsUShort());
+                    GameActions.Say(args[0].As<string>(), hue: args[1].As<ushort>());
                     break;
                 default:
                     throw new ScriptRunTimeError(null, "Usage: msg ('text') [color]");
@@ -887,7 +940,7 @@ namespace ClassicUO.Game.Scripting
             return true;
         }
 
-        //private static bool Paperdoll(string command, Arguments args, bool quiet, bool force)
+        //private static bool Paperdoll(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    if (args.Length > 1)
         //        throw new RunTimeError(null, "Usage: paperdoll [serial]");
@@ -898,17 +951,17 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //public static bool Cast(string command, Arguments args, bool quiet, bool force)
+        //public static bool Cast(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    if (args.Length == 0)
         //        throw new RunTimeError(null, "Usage: cast 'spell' [serial]");
 
         //    Spell spell;
 
-        //    if (int.TryParse(args[0].AsString(), out int spellnum))
+        //    if (int.TryParse(args[0].As<string>(), out int spellnum))
         //        spell = Spell.Get(spellnum);
         //    else
-        //        spell = Spell.GetByName(args[0].AsString());
+        //        spell = Spell.GetByName(args[0].As<string>());
         //    if (spell != null)
         //    {
         //        if (args.Length > 1)
@@ -930,7 +983,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //private static bool WaitForTarget(string command, Arguments args, bool quiet, bool force)
+        //private static bool WaitForTarget(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    if (args.Length != 1)
         //        throw new RunTimeError(null, "Usage: waitfortarget (timeout)");
@@ -942,7 +995,7 @@ namespace ClassicUO.Game.Scripting
         //    return false;
         //}
 
-        //private static bool CancelTarget(string command, Arguments args, bool quiet, bool force)
+        //private static bool CancelTarget(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    if (args.Length != 0)
         //        throw new RunTimeError(null, "Usage: canceltarget");
@@ -953,7 +1006,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //private static bool Target(string command, Arguments args, bool quiet, bool force)
+        //private static bool Target(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    if (args.Length != 1)
         //        throw new RunTimeError(null, "Usage: target (serial)");
@@ -966,7 +1019,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //private static bool TargetType(string command, Arguments args, bool quiet, bool force)
+        //private static bool TargetType(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    if (args.Length < 1 || args.Length > 3)
         //        throw new RunTimeError(null, "Usage: targettype (graphic) [color] [range]");
@@ -1026,7 +1079,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //private static bool TargetGround(string command, Arguments args, bool quiet, bool force)
+        //private static bool TargetGround(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    if (args.Length < 1 || args.Length > 3)
         //        throw new RunTimeError(null, "Usage: targetground (graphic) [color] [range]");
@@ -1034,7 +1087,7 @@ namespace ClassicUO.Game.Scripting
         //    throw new RunTimeError(null, $"Unimplemented command {command}");
         //}
 
-        //private static bool TargetTile(string command, Arguments args, bool quiet, bool force)
+        //private static bool TargetTile(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    if (!(args.Length == 1 || args.Length == 3))
         //        throw new RunTimeError(null, "Usage: targettile ('last'/'current'/(x y z))");
@@ -1051,7 +1104,7 @@ namespace ClassicUO.Game.Scripting
         //    {
         //        case 1:
         //            {
-        //                var alias = args[0].AsString();
+        //                var alias = args[0].As<string>();
         //                if (alias == "last")
         //                {
         //                    if (Targeting.LastTargetInfo.Type != 1)
@@ -1077,7 +1130,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //private static bool TargetTileOffset(string command, Arguments args, bool quiet, bool force)
+        //private static bool TargetTileOffset(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    if (args.Length != 3)
         //        throw new RunTimeError(null, "Usage: targettileoffset (x y z)");
@@ -1098,7 +1151,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //private static bool TargetTileRelative(string command, Arguments args, bool quiet, bool force)
+        //private static bool TargetTileRelative(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    if (args.Length != 2)
         //        throw new RunTimeError(null, "Usage: targettilerelative (serial) (range). Range may be negative.");
@@ -1160,21 +1213,21 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //public static bool HeadMsg(string command, Arguments args, bool quiet, bool force)
+        //public static bool HeadMsg(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    switch (args.Length)
         //    {
         //        case 1:
-        //            World.Player.OverheadMessage(Config.GetInt("SysColor"), args[0].AsString());
+        //            World.Player.OverheadMessage(Config.GetInt("SysColor"), args[0].As<string>());
         //            break;
         //        case 2:
-        //            World.Player.OverheadMessage(args[1].AsInt(), args[0].AsString());
+        //            World.Player.OverheadMessage(args[1].AsInt(), args[0].As<string>());
         //            break;
         //        case 3:
         //            Mobile m = World.FindMobile(args[2].AsSerial());
 
         //            if (m != null)
-        //                m.OverheadMessage(args[1].AsInt(), args[0].AsString());
+        //                m.OverheadMessage(args[1].AsInt(), args[0].As<string>());
         //            break;
         //        default:
         //            throw new RunTimeError(null, "Usage: headmsg (text) [color] [serial]");
@@ -1183,15 +1236,15 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //public static bool SysMsg(string command, Arguments args, bool quiet, bool force)
+        //public static bool SysMsg(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    switch (args.Length)
         //    {
         //        case 1:
-        //            World.Player.SendMessage(Config.GetInt("SysColor"), args[0].AsString());
+        //            World.Player.SendMessage(Config.GetInt("SysColor"), args[0].As<string>());
         //            break;
         //        case 2:
-        //            World.Player.SendMessage(args[1].AsInt(), args[0].AsString());
+        //            World.Player.SendMessage(args[1].AsInt(), args[0].As<string>());
         //            break;
         //        default:
         //            throw new RunTimeError(null, "Usage: sysmsg ('text') [color]");
@@ -1200,7 +1253,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //public static bool DressCommand(string command, Arguments args, bool quiet, bool force)
+        //public static bool DressCommand(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    //we're using a named dresslist or a temporary dresslist?
         //    if (args.Length == 0)
@@ -1212,17 +1265,17 @@ namespace ClassicUO.Game.Scripting
         //    }
         //    else
         //    {
-        //        var d = DressList.Find(args[0].AsString());
+        //        var d = DressList.Find(args[0].As<string>());
         //        if (d != null)
         //            d.Dress();
         //        else if (!quiet)
-        //            throw new RunTimeError(null, $"dresslist {args[0].AsString()} not found");
+        //            throw new RunTimeError(null, $"dresslist {args[0].As<string>()} not found");
         //    }
 
         //    return true;
         //}
 
-        //public static bool UnDressCommand(string command, Arguments args, bool quiet, bool force)
+        //public static bool UnDressCommand(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    //we're using a named dresslist or a temporary dresslist?
         //    if (args.Length == 0)
@@ -1234,17 +1287,17 @@ namespace ClassicUO.Game.Scripting
         //    }
         //    else
         //    {
-        //        var d = DressList.Find(args[0].AsString());
+        //        var d = DressList.Find(args[0].As<string>());
         //        if (d != null)
         //            d.Undress();
         //        else if (!quiet)
-        //            throw new RunTimeError(null, $"dresslist {args[0].AsString()} not found");
+        //            throw new RunTimeError(null, $"dresslist {args[0].As<string>()} not found");
         //    }
 
         //    return true;
         //}
 
-        //public static bool DressConfig(string command, Arguments args, bool quiet, bool force)
+        //public static bool DressConfig(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    if (DressList._Temporary == null)
         //        DressList._Temporary = new DressList("dressconfig");
@@ -1261,32 +1314,73 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //private static bool SetTimer(string command, Arguments args, bool quiet, bool force)
+        //private static bool SetTimer(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    if (args.Length != 2)
         //        throw new RunTimeError(null, "Usage: settimer (timer name) (value)");
 
 
-        //    Interpreter.SetTimer(args[0].AsString(), args[1].AsInt());
+        //    Interpreter.SetTimer(args[0].As<string>(), args[1].AsInt());
         //    return true;
         //}
 
-        //private static bool RemoveTimer(string command, Arguments args, bool quiet, bool force)
+        //private static bool RemoveTimer(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    if (args.Length != 1)
         //        throw new RunTimeError(null, "Usage: removetimer (timer name)");
 
-        //    Interpreter.RemoveTimer(args[0].AsString());
+        //    Interpreter.RemoveTimer(args[0].As<string>());
         //    return true;
         //}
 
-        //private static bool CreateTimer(string command, Arguments args, bool quiet, bool force)
+        //private static bool CreateTimer(string command, ArgumentList args, bool quiet, bool force)
         //{
         //    if (args.Length != 1)
         //        throw new RunTimeError(null, "Usage: createtimer (timer name)");
 
-        //    Interpreter.CreateTimer(args[0].AsString());
+        //    Interpreter.CreateTimer(args[0].As<string>());
         //    return true;
         //}
+
+        private static Entity CmdFindEntityBySerial(uint serial, ushort color, ArgumentList.Sources source, int range)
+        {
+            // Try retrieving an Item
+            Entity entity = null;
+            var graphic = World.GetOrCreateItem(serial).Graphic;
+            if (source == ArgumentList.Sources.Any) 
+            {
+                // Any also look at the ground if not found in player belongings
+                entity = World.Player.FindItem(graphic, color);
+                if(entity != null)
+                    entity = World.Player.FindItemByTypeOnGroundWithHueInRange(graphic, color, range);
+            }
+            else if (source == ArgumentList.Sources.Ground)
+                entity = World.Player.FindItemByTypeOnGroundWithHueInRange(graphic, color, range);
+            else
+                entity = World.Player.FindItemByLayer((Layer)source)?.FindItem(graphic, color);
+
+            // Try retrieving a Mobile
+            if (entity == null)
+                entity = World.GetOrCreateMobile(serial);
+
+            return entity;
+        }
+
+        private static Item CmdFindEntityByGraphic(ushort graphic, ushort color = ushort.MaxValue, ArgumentList.Sources source = ArgumentList.Sources.Any, int range = ArgumentList.DefaultRange)
+        {
+            Item item = null;
+            if (source == ArgumentList.Sources.Any)
+            {
+                item = World.Player.FindItem(graphic, (ushort)color);
+                if (item != null) // For Any, also look at the ground if not found in player belongings
+                    item = World.Player.FindItemByTypeOnGroundWithHueInRange(graphic, (ushort)color, range);
+            }
+            else if (source == ArgumentList.Sources.Ground)
+                item = World.Player.FindItemByTypeOnGroundWithHueInRange(graphic, (ushort)color, range);
+            else
+                item = World.Player.FindItemByLayer((Layer)source)?.FindItem(graphic, (ushort)color);
+
+            return item;
+        }
     }
 }

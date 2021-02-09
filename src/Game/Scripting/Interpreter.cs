@@ -24,9 +24,11 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using ClassicUO.Utility;
+using System.ComponentModel;
 
 namespace ClassicUO.Game.Scripting
 {
+    // Generic exception for the script functionality
     public class ScriptRunTimeError : Exception
     {
         public ASTNode Node;
@@ -35,84 +37,95 @@ namespace ClassicUO.Game.Scripting
         {
             Node = node;
         }
-    }
 
-    public class ScriptTypeConversionError : Exception
-    {
-        public ASTNode Node;
-
-        public ScriptTypeConversionError(ASTNode node, string error) : base(error)
+        public ScriptRunTimeError(ASTNode node, string error, Exception inner) : base(error, inner)
         {
             Node = node;
         }
     }
 
+    // Script exception related to calling a command with the wrong syntax (most valuable to player and UI feedback)
+    public class ScriptSyntaxError : ScriptRunTimeError
+    {
+        public ScriptSyntaxError(string error, ScriptRunTimeError inner) : base(inner.Node, error, inner)
+        {
+        }
+    }
+
+    // Script exception related to conversion issues between types, enums, dictionaries, etc
+    public class ScriptTypeConversionError : ScriptRunTimeError
+    {
+        public ScriptTypeConversionError(ASTNode node, string error) : base(node, error)
+        {
+        }
+    }
+
     internal static class TypeConverter
     {
-        public static int ToInt(string token)
+        public static T To<T>(string token)
         {
-            int val;
-
-            if (token.StartsWith("0x"))
+            var converter = TypeDescriptor.GetConverter(typeof(T));
+            if (converter != null)
             {
-                if (int.TryParse(token.Substring(2), NumberStyles.HexNumber, Interpreter.Culture, out val))
-                    return val;
+                if (token.StartsWith("0x"))
+                {
+                    long hexValue = long.Parse(token.Substring(2), NumberStyles.AllowHexSpecifier);
+                    return (T)Convert.ChangeType(hexValue, typeof(T));
+                }
+                else return (T)converter.ConvertFromString(token);
             }
-            else if (int.TryParse(token, out val))
-                return val;
-
-            throw new ScriptTypeConversionError(null, "Cannot convert argument to int");
+            else throw new ScriptTypeConversionError(null, "Cannot convert argument to " + typeof(T).FullName);
         }
 
-        public static uint ToUInt(string token)
-        {
-            uint val;
+        //public static uint ToUInt(string token)
+        //{
+        //    uint val;
 
-            if (token.StartsWith("0x"))
-            {
-                if (uint.TryParse(token.Substring(2), NumberStyles.HexNumber, Interpreter.Culture, out val))
-                    return val;
-            }
-            else if (uint.TryParse(token, out val))
-                return val;
+        //    if (token.StartsWith("0x"))
+        //    {
+        //        if (uint.TryParse(token.Substring(2), NumberStyles.HexNumber, Interpreter.Culture, out val))
+        //            return val;
+        //    }
+        //    else if (uint.TryParse(token, out val))
+        //        return val;
 
-            throw new ScriptTypeConversionError(null, "Cannot convert argument to uint");
-        }
+        //    throw new ScriptTypeConversionError(null, "Cannot convert argument to uint");
+        //}
 
-        public static ushort ToUShort(string token)
-        {
-            ushort val;
+        //public static ushort ToUShort(string token)
+        //{
+        //    ushort val;
 
-            if (token.StartsWith("0x"))
-            {
-                if (ushort.TryParse(token.Substring(2), NumberStyles.HexNumber, Interpreter.Culture, out val))
-                    return val;
-            }
-            else if (ushort.TryParse(token, out val))
-                return val;
+        //    if (token.StartsWith("0x"))
+        //    {
+        //        if (ushort.TryParse(token.Substring(2), NumberStyles.HexNumber, Interpreter.Culture, out val))
+        //            return val;
+        //    }
+        //    else if (ushort.TryParse(token, out val))
+        //        return val;
 
-            throw new ScriptTypeConversionError(null, "Cannot convert argument to ushort");
-        }
+        //    throw new ScriptTypeConversionError(null, "Cannot convert argument to ushort");
+        //}
 
-        public static double ToDouble(string token)
-        {
-            double val;
+        //public static double ToDouble(string token)
+        //{
+        //    double val;
 
-            if (double.TryParse(token, out val))
-                return val;
+        //    if (double.TryParse(token, out val))
+        //        return val;
 
-            throw new ScriptTypeConversionError(null, "Cannot convert argument to double");
-        }
+        //    throw new ScriptTypeConversionError(null, "Cannot convert argument to double");
+        //}
 
-        public static bool ToBool(string token)
-        {
-            bool val;
+        //public static bool ToBool(string token)
+        //{
+        //    bool val;
 
-            if (bool.TryParse(token, out val))
-                return val;
+        //    if (bool.TryParse(token, out val))
+        //        return val;
 
-            throw new ScriptTypeConversionError(null, "Cannot convert argument to bool");
-        }
+        //    throw new ScriptTypeConversionError(null, "Cannot convert argument to bool");
+        //}
     }
 
     internal class Scope
@@ -149,186 +162,6 @@ namespace ClassicUO.Game.Scripting
         }
     }
 
-    public class Argument
-    {
-        private ASTNode _node;
-        private ScriptExecutionState _script;
-
-        public Argument(ScriptExecutionState script, ASTNode node)
-        {
-            _node = node;
-            _script = script;
-        }
-
-        // Treat the argument as an integer
-        public int AsInt()
-        {
-            if (_node.Lexeme == null)
-                throw new ScriptRunTimeError(_node, "Cannot convert argument to int");
-
-            // Try to resolve it as a scoped variable first
-            var arg = _script.Lookup(_node.Lexeme);
-            if (arg != null)
-                return arg.AsInt();
-
-            return TypeConverter.ToInt(_node.Lexeme);
-        }
-
-        // Treat the argument as an unsigned integer
-        public uint AsUInt()
-        {
-            if (_node.Lexeme == null)
-                throw new ScriptRunTimeError(_node, "Cannot convert argument to uint");
-
-            // Try to resolve it as a scoped variable first
-            var arg = _script.Lookup(_node.Lexeme);
-            if (arg != null)
-                return arg.AsUInt();
-
-            return TypeConverter.ToUInt(_node.Lexeme);
-        }
-
-        public ushort AsUShort()
-        {
-            if (_node.Lexeme == null)
-                throw new ScriptRunTimeError(_node, "Cannot convert argument to ushort");
-
-            // Try to resolve it as a scoped variable first
-            var arg = _script.Lookup(_node.Lexeme);
-            if (arg != null)
-                return arg.AsUShort();
-
-            return TypeConverter.ToUShort(_node.Lexeme);
-        }
-
-        // Treat the argument as a serial or an alias. Aliases will
-        // be automatically resolved to serial numbers.
-        public uint AsSerial()
-        {
-            if (_node.Lexeme == null)
-                throw new ScriptRunTimeError(_node, "Cannot convert argument to serial");
-
-            // Try to resolve it as a scoped variable first
-            var arg = _script.Lookup(_node.Lexeme);
-            if (arg != null)
-                return arg.AsSerial();
-
-            // Resolve it as a global alias next
-            uint serial = Interpreter.GetAlias(_node.Lexeme);
-            if (serial != uint.MaxValue)
-                return serial;
-
-            return AsUInt();
-        }
-
-        // Treat the argument as a string
-        public string AsString()
-        {
-            if (_node.Lexeme == null)
-                throw new ScriptRunTimeError(_node, "Cannot convert argument to string");
-
-            // Try to resolve it as a scoped variable first
-            var arg = _script.Lookup(_node.Lexeme);
-            if (arg != null)
-                return arg.AsString();
-
-            return _node.Lexeme;
-        }
-
-        public bool AsBool()
-        {
-            if (_node.Lexeme == null)
-                throw new ScriptRunTimeError(_node, "Cannot convert argument to bool");
-
-            return TypeConverter.ToBool(_node.Lexeme);
-        }
-
-        public override bool Equals(object obj)
-        {
-            if (obj == null)
-                return false;
-
-            Argument arg = obj as Argument;
-
-            if (arg == null)
-                return false;
-
-            return Equals(arg);
-        }
-
-        public bool Equals(Argument other)
-        {
-            if (other == null)
-                return false;
-
-            return (other._node.Lexeme == _node.Lexeme);
-        }
-    }
-
-    public class Arguments
-    {
-        public enum ArgumentType
-        {
-            Mandatory,
-            Optional,
-        }
-        public uint DefaultSerial = 0;
-        public ushort DefaultColor = 65535;
-
-        private Argument[] _args;
-        private int _index;
-
-        public Arguments(Argument[] args)
-        {
-            _args = args;
-            _index = -1;
-        }
-
-        public Argument this[int i]
-        {
-            
-            get { _index = i; return _args[_index]; }
-            set { _index = i; _args[_index] = value; }
-        }
-
-        public int Length
-        {
-            get { return _args.Length; }
-        }
-
-        public uint NextAsSerial(ArgumentType type = ArgumentType.Optional)
-        {
-            _index++;
-            if (_args.Length > _index)
-                return _args[_index].AsSerial();
-            else if(type == ArgumentType.Optional)
-                return DefaultSerial;
-            else throw new ScriptRunTimeError(null, "Serial argument does not exist at " + _index);
-        }
-
-        public ushort NextAsColor(ArgumentType type = ArgumentType.Optional)
-        {
-            _index++;
-            if (_args.Length > _index)
-            {
-                try
-                {
-                    var color = _args[_index].AsUShort();
-                    return color;
-                }
-                catch (ScriptTypeConversionError ex)
-                {
-                    // a color can also be the string "any", "grey", "red", etc..
-                    var colorName = _args[_index].AsString();
-                    return HuesHelper.ColorNameToHue(colorName);
-                }
-            }
-            else if (type == ArgumentType.Optional)
-                return DefaultColor;
-            else throw new ScriptRunTimeError(null, "Serial argument does not exist at " + _index);
-        }
-    }
-
     public class ScriptExecutionState
     {
         private ASTNode _statement;
@@ -362,7 +195,7 @@ namespace ClassicUO.Game.Scripting
             _scope = _scope.Parent;
         }
 
-        private Arguments ConstructArguments(ref ASTNode node)
+        private ArgumentList ConstructArgumentList(ref ASTNode node)
         {
             List<Argument> args = new List<Argument>();
 
@@ -380,7 +213,7 @@ namespace ClassicUO.Game.Scripting
                     case ASTNodeType.LESS_THAN_OR_EQUAL:
                     case ASTNodeType.GREATER_THAN:
                     case ASTNodeType.GREATER_THAN_OR_EQUAL:
-                        return new Arguments(args.ToArray());
+                        return new ArgumentList(args.ToArray());
                 }
 
                 args.Add(new Argument(this, node));
@@ -388,7 +221,7 @@ namespace ClassicUO.Game.Scripting
                 node = node.Next();
             }
 
-            return new Arguments(args.ToArray());
+            return new ArgumentList(args.ToArray());
         }
 
         // For now, the scripts execute directly from the
@@ -635,7 +468,7 @@ namespace ClassicUO.Game.Scripting
                         {
                             PushScope(node);
 
-                            // Grab the arguments
+                            // Grab the ArgumentList
                             var max = node.FirstChild();
 
                             if (max.Type != ASTNodeType.INTEGER)
@@ -651,7 +484,7 @@ namespace ClassicUO.Game.Scripting
                             // Increment the iterator argument
                             var arg = _scope.GetVar(iterName);
 
-                            var iter = new ASTNode(ASTNodeType.INTEGER, (arg.AsUInt() + 1).ToString(), node, 0);
+                            var iter = new ASTNode(ASTNodeType.INTEGER, (arg.As<uint>() + 1).ToString(), node, 0);
 
                             _scope.SetVar(iterName, new Argument(this, iter));
                         }
@@ -663,7 +496,7 @@ namespace ClassicUO.Game.Scripting
                         node = node.FirstChild();
                         var end = new Argument(this, node);
 
-                        if (i.AsUInt() < end.AsUInt())
+                        if (i.As<uint>() < end.As<uint>())
                         {
                             // enter the loop
                             Advance();
@@ -730,7 +563,7 @@ namespace ClassicUO.Game.Scripting
                         else
                         {
                             // Increment the iterator argument
-                            var idx = _scope.GetVar(iterName).AsInt() + 1;
+                            var idx = _scope.GetVar(iterName).As<int>() + 1;
                             var iter = new ASTNode(ASTNodeType.INTEGER, idx.ToString(), node, 0);
                             _scope.SetVar(iterName, new Argument(this, iter));
 
@@ -933,10 +766,10 @@ namespace ClassicUO.Game.Scripting
             if (handler == null)
                 throw new ScriptRunTimeError(node, "Unknown command");
 
-            var cont = handler(node.Lexeme, ConstructArguments(ref node), quiet, force);
+            var cont = handler(node.Lexeme, ConstructArgumentList(ref node), quiet, force);
 
             if (node != null)
-                throw new ScriptRunTimeError(node, "Command did not consume all available arguments");
+                throw new ScriptRunTimeError(node, "Command did not consume all available ArgumentList");
 
             return cont;
         }
@@ -1067,7 +900,7 @@ namespace ClassicUO.Game.Scripting
             if (handler == null)
                 throw new ScriptRunTimeError(node, "Unknown expression");
 
-            var result = handler(node.Lexeme, ConstructArguments(ref node), quiet);
+            var result = handler(node.Lexeme, ConstructArgumentList(ref node), quiet);
 
             if (not)
                 return CompareOperands(ASTNodeType.EQUAL, result, false);
@@ -1098,16 +931,16 @@ namespace ClassicUO.Game.Scripting
             switch (node.Type)
             {
                 case ASTNodeType.INTEGER:
-                    val = TypeConverter.ToInt(node.Lexeme);
+                    val = TypeConverter.To<int>(node.Lexeme);
                     break;
                 case ASTNodeType.SERIAL:
-                    val = TypeConverter.ToUInt(node.Lexeme);
+                    val = TypeConverter.To<uint>(node.Lexeme);
                     break;
                 case ASTNodeType.STRING:
                     val = node.Lexeme;
                     break;
                 case ASTNodeType.DOUBLE:
-                    val = TypeConverter.ToDouble(node.Lexeme);
+                    val = TypeConverter.To<double>(node.Lexeme);
                     break;
                 case ASTNodeType.OPERAND:
                     {
@@ -1121,7 +954,7 @@ namespace ClassicUO.Game.Scripting
                         }
                         else
                         {
-                            val = handler(node.Lexeme, ConstructArguments(ref node), quiet);
+                            val = handler(node.Lexeme, ConstructArgumentList(ref node), quiet);
                         }
                         break;
                     }
@@ -1135,8 +968,10 @@ namespace ClassicUO.Game.Scripting
 
     public static class Interpreter
     {
-        // Aliases only hold serial numbers
-        private static Dictionary<string, uint> _aliases = new Dictionary<string, uint>();
+        // Aliases for all basic types (int, uint, short, ushort) handles with generics
+        private static Dictionary<Type, Dictionary<string, object>> _aliases = new Dictionary<Type, Dictionary<string, object>>();
+        public delegate bool AliasHandler<T>(string alias, out T value);
+        private static Dictionary<Type, Dictionary<string, object>> _aliasHandlers = new Dictionary<Type, Dictionary<string, object>>();
 
         // Lists
         private static Dictionary<string, List<Argument>> _lists = new Dictionary<string, List<Argument>>();
@@ -1145,18 +980,14 @@ namespace ClassicUO.Game.Scripting
         private static Dictionary<string, DateTime> _timers = new Dictionary<string, DateTime>();
 
         // Expressions
-        public delegate IComparable ExpressionHandler(string expression, Arguments args, bool quiet);
-        public delegate T ExpressionHandler<T>(string expression, Arguments args, bool quiet) where T : IComparable;
+        public delegate IComparable ExpressionHandler(string expression, ArgumentList args, bool quiet);
+        public delegate T ExpressionHandler<T>(string expression, ArgumentList args, bool quiet) where T : IComparable;
 
         private static Dictionary<string, ExpressionHandler> _exprHandlers = new Dictionary<string, ExpressionHandler>();
 
-        public delegate bool CommandHandler(string command, Arguments args, bool quiet, bool force);
+        public delegate bool CommandHandler(string command, ArgumentList args, bool quiet, bool force);
 
         private static Dictionary<string, CommandHandler> _commandHandlers = new Dictionary<string, CommandHandler>();
-
-        public delegate uint AliasHandler(string alias);
-
-        private static Dictionary<string, AliasHandler> _aliasHandlers = new Dictionary<string, AliasHandler>();
 
         private static ScriptExecutionState _activeScript = null;
 
@@ -1206,32 +1037,42 @@ namespace ClassicUO.Game.Scripting
             return handler;
         }
 
-        public static void RegisterAliasHandler(string keyword, AliasHandler handler)
+        public static void RegisterAliasHandler<T>(string keyword, AliasHandler<T> handler)
         {
-            _aliasHandlers[keyword] = handler;
+            if (!_aliasHandlers.ContainsKey(typeof(T)))
+                _aliasHandlers.Add(typeof(T), new Dictionary<string, object>());
+
+            _aliasHandlers[typeof(T)].Add(keyword, handler);
         }
 
-        public static void UnregisterAliasHandler(string keyword)
+        public static void UnregisterAliasHandler<T>(string keyword, AliasHandler<T> handler)
         {
-            _aliasHandlers.Remove(keyword);
+            if (_aliasHandlers.ContainsKey(typeof(T)))
+                _aliasHandlers[typeof(T)].Remove(keyword);
         }
 
-        public static uint GetAlias(string alias)
+        // Retrieves a registered alias for the given type T
+        public static bool GetAlias<T>(string alias, ref T value)
         {
-            // If a handler is explicitly registered, call that.
-            if (_aliasHandlers.TryGetValue(alias, out AliasHandler handler))
-                return handler(alias);
-
-            uint value;
-            if (_aliases.TryGetValue(alias, out value))
-                return value;
-
-            return uint.MaxValue;
+            if (_aliasHandlers.ContainsKey(typeof(T)) && _aliasHandlers[typeof(T)].TryGetValue(alias, out object handlerObj))
+            {
+                AliasHandler<T> hander = (AliasHandler<T>)handlerObj;
+                return hander(alias, out value);
+            }
+            else if(_aliases.ContainsKey(typeof(T)) && _aliases[typeof(T)].TryGetValue(alias, out object aliasObj))
+            {
+                value = (T)aliasObj;
+                return true;
+            }
+            else return false;
         }
 
-        public static void SetAlias(string alias, uint serial)
+        public static void SetAlias<T>(string alias, T value)
         {
-            _aliases[alias] = serial;
+            if (!_aliases.ContainsKey(typeof(T)))
+                _aliases.Add(typeof(T), new Dictionary<string, object>());
+
+            _aliases[typeof(T)].Add(alias, value);
         }
 
         public static void CreateList(string name)

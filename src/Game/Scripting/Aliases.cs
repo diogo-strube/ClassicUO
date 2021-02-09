@@ -1,15 +1,21 @@
-﻿namespace ClassicUO.Game.Scripting
+﻿using static ClassicUO.Game.Scripting.Interpreter;
+
+namespace ClassicUO.Game.Scripting
 {
     public static class Aliases
     {
         public static void Register()
         {
-            Interpreter.RegisterAliasHandler("ground", Ground);
+            Interpreter.RegisterAliasHandler<uint>("mount", Mount);
+
+            Interpreter.SetAlias<ushort>("any", ushort.MaxValue); // mainly used for colors
         }
 
-        private static uint Ground(string alias)
+        private static bool Mount(string alias, out uint value)
         {
-            return 0;
+            var mount = World.Player.FindItemByLayer(Data.Layer.Mount);
+            value = mount.Serial;
+            return (mount!= null);
         }
     }
 }
