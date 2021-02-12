@@ -195,7 +195,7 @@ namespace ClassicUO.Game.Scripting
             _scope = _scope.Parent;
         }
 
-        private ArgumentList ConstructArgumentList(ref ASTNode node)
+        private Argument[] ConstructArgumentList(ref ASTNode node)
         {
             List<Argument> args = new List<Argument>();
 
@@ -213,7 +213,7 @@ namespace ClassicUO.Game.Scripting
                     case ASTNodeType.LESS_THAN_OR_EQUAL:
                     case ASTNodeType.GREATER_THAN:
                     case ASTNodeType.GREATER_THAN_OR_EQUAL:
-                        return new ArgumentList(args.ToArray());
+                        return args.ToArray();
                 }
 
                 args.Add(new Argument(this, node));
@@ -221,7 +221,7 @@ namespace ClassicUO.Game.Scripting
                 node = node.Next();
             }
 
-            return new ArgumentList(args.ToArray());
+            return args.ToArray();
         }
 
         // For now, the scripts execute directly from the
@@ -760,18 +760,26 @@ namespace ClassicUO.Game.Scripting
         private bool ExecuteCommand(ASTNode node)
         {
             node = EvaluateModifiers(node, out bool quiet, out bool force, out _);
+            try
+            {
+                if(!Commands.Definitions.ContainsKey(node.Lexeme))
+                    throw new ScriptRunTimeError(node, "Command is not defined");
 
-            var handler = Interpreter.GetCommandHandler(node.Lexeme);
+                var executionResult = Commands.Definitions[node.Lexeme].Process(ConstructArgumentList(ref node), force);
 
-            if (handler == null)
-                throw new ScriptRunTimeError(node, "Unknown command");
+                // Attention - even if command logic does noe execute, it parses arguments and therefore should be consuming all nodes
+                if (node != null)
+                    throw new ScriptRunTimeError(node, "Command did not consume all available ArgumentList");
 
-            var cont = handler(node.Lexeme, ConstructArgumentList(ref node), quiet, force);
-
-            if (node != null)
-                throw new ScriptRunTimeError(node, "Command did not consume all available ArgumentList");
-
-            return cont;
+                return executionResult;
+            }
+            catch(ScriptRunTimeError ex)
+            {
+                // If quiete consume script related error to ignore it
+                if(!quiet)
+                    throw ex;
+                return false;
+            }  
         }
 
         private bool EvaluateExpression(ref ASTNode expr)
@@ -968,11 +976,6 @@ namespace ClassicUO.Game.Scripting
 
     public static class Interpreter
     {
-        // Aliases for all basic types (int, uint, short, ushort) handles with generics
-        private static Dictionary<Type, Dictionary<string, object>> _aliases = new Dictionary<Type, Dictionary<string, object>>();
-        public delegate bool AliasHandler<T>(string alias, out T value);
-        private static Dictionary<Type, Dictionary<string, object>> _aliasHandlers = new Dictionary<Type, Dictionary<string, object>>();
-
         // Lists
         private static Dictionary<string, List<Argument>> _lists = new Dictionary<string, List<Argument>>();
 
@@ -980,14 +983,10 @@ namespace ClassicUO.Game.Scripting
         private static Dictionary<string, DateTime> _timers = new Dictionary<string, DateTime>();
 
         // Expressions
-        public delegate IComparable ExpressionHandler(string expression, ArgumentList args, bool quiet);
-        public delegate T ExpressionHandler<T>(string expression, ArgumentList args, bool quiet) where T : IComparable;
+        public delegate IComparable ExpressionHandler(string expression, Argument[] args, bool quiet);
+        public delegate T ExpressionHandler<T>(string expression, Argument[] args, bool quiet) where T : IComparable;
 
         private static Dictionary<string, ExpressionHandler> _exprHandlers = new Dictionary<string, ExpressionHandler>();
-
-        public delegate bool CommandHandler(string command, ArgumentList args, bool quiet, bool force);
-
-        private static Dictionary<string, CommandHandler> _commandHandlers = new Dictionary<string, CommandHandler>();
 
         private static ScriptExecutionState _activeScript = null;
 
@@ -1023,56 +1022,6 @@ namespace ClassicUO.Game.Scripting
             _exprHandlers.TryGetValue(keyword, out var expression);
 
             return expression;
-        }
-
-        public static void RegisterCommandHandler(string keyword, CommandHandler handler)
-        {
-            _commandHandlers[keyword] = handler;
-        }
-
-        public static CommandHandler GetCommandHandler(string keyword)
-        {
-            _commandHandlers.TryGetValue(keyword, out CommandHandler handler);
-
-            return handler;
-        }
-
-        public static void RegisterAliasHandler<T>(string keyword, AliasHandler<T> handler)
-        {
-            if (!_aliasHandlers.ContainsKey(typeof(T)))
-                _aliasHandlers.Add(typeof(T), new Dictionary<string, object>());
-
-            _aliasHandlers[typeof(T)].Add(keyword, handler);
-        }
-
-        public static void UnregisterAliasHandler<T>(string keyword, AliasHandler<T> handler)
-        {
-            if (_aliasHandlers.ContainsKey(typeof(T)))
-                _aliasHandlers[typeof(T)].Remove(keyword);
-        }
-
-        // Retrieves a registered alias for the given type T
-        public static bool GetAlias<T>(string alias, ref T value)
-        {
-            if (_aliasHandlers.ContainsKey(typeof(T)) && _aliasHandlers[typeof(T)].TryGetValue(alias, out object handlerObj))
-            {
-                AliasHandler<T> hander = (AliasHandler<T>)handlerObj;
-                return hander(alias, out value);
-            }
-            else if(_aliases.ContainsKey(typeof(T)) && _aliases[typeof(T)].TryGetValue(alias, out object aliasObj))
-            {
-                value = (T)aliasObj;
-                return true;
-            }
-            else return false;
-        }
-
-        public static void SetAlias<T>(string alias, T value)
-        {
-            if (!_aliases.ContainsKey(typeof(T)))
-                _aliases.Add(typeof(T), new Dictionary<string, object>());
-
-            _aliases[typeof(T)].Add(alias, value);
         }
 
         public static void CreateList(string name)
@@ -1253,6 +1202,7 @@ namespace ClassicUO.Game.Scripting
                 }
             }
 
+            // Execute script (parsing all nodes, executing what possible and queing majority of commands)
             if (!_activeScript.ExecuteNext())
             {
                 _activeScript = null;

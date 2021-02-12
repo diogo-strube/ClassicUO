@@ -32,6 +32,15 @@ namespace ClassicUO.Game.Scripting
 {
     public static class Expressions
     {
-        
+        // Called by upper management class to register all the desired expressions
+        public static void Register()
+        {
+            Interpreter.RegisterExpressionHandler("findobject", ExpressionToCommand);
+        }
+
+        public static bool ExpressionToCommand(string expression, Argument[] args, bool force)
+        {
+            return Commands.Definitions[expression].Process(args, force);
+        }
     }
 }
