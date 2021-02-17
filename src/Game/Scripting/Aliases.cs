@@ -15,6 +15,9 @@ namespace ClassicUO.Game.Scripting
             // Colors
             Write("color", "any", ushort.MaxValue);
 
+            // Source
+            Write("source", "", "backpack");
+
             // Directions
             Write("direction", "southeast", "down");
             Write("direction", "southwest", "left");

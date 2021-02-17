@@ -131,6 +131,9 @@ namespace ClassicUO.Game.Scripting
         // Index used to organize traversal of arguments
         private int _index;
 
+        // Index used to organize traversal of optional arguments and definitions pf parameters
+        private int _virtualIndex;
+
         public enum Expectation
         {
             Mandatory,
@@ -142,6 +145,7 @@ namespace ClassicUO.Game.Scripting
             _args = args;
             _definitions = definitions;
             _index = -1;
+            _virtualIndex = -1;
         }
 
         // Array like interface
@@ -160,10 +164,9 @@ namespace ClassicUO.Game.Scripting
         public T NextAs<T>(Expectation type = Expectation.Optional)
         {
             if (_args.Length > _index + 1) // Could we read one more argument?
-                return _args[++_index].As<T>(_definitions[_index]); // Yes, so read it as desired type (passinf default if possible)
-            else if (type == Expectation.Optional) // Nop, but this is optional
-                return default(T);
-            //return GetDefault<T>(); // So return default without reading anything
+                return _args[++_index].As<T>(_definitions[++_virtualIndex]); // Yes, so read it as desired type (passinf default if possible)
+            else if (type == Expectation.Optional && _definitions.Length > _virtualIndex + 1) // Nop, but this is optional
+                return GetDefault<T>(_definitions[++_virtualIndex]);
             else throw new ScriptRunTimeError(null, typeof(T).FullName + " argument does not exist at " + _index); // Otherwise.. kaboooom
         }
 
@@ -185,5 +188,22 @@ namespace ClassicUO.Game.Scripting
                 //return new T[] { GetDefault<T>() }; // Return single element (Length == 1) for non existent optionals
             else throw new ScriptRunTimeError(null, "List of " + typeof(T).FullName + " argument does not exist at " + _index);
         }  
+
+        public T GetDefault<T>(string localAlias = "")
+        {
+            T value = default(T);
+            if (value == null && typeof(T) == typeof(string))
+                value = (T)Convert.ChangeType(string.Empty, typeof(string));
+
+            // Try to resolve it as a local alias (like a ushort set to 0, when a "color", should be ushort.MaxValue)
+            string content = (string)Convert.ChangeType(value, typeof(string));
+            if (localAlias == string.Empty || !Aliases.Read<T>(localAlias, content, ref value))
+            {
+                // Also try to resolve it as a global alias (like every uint as 'backpack' maps to the backpack serial)
+                Aliases.Read<T>(content, ref value);
+            }
+
+            return value;
+        }
     }
 }

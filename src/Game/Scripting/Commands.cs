@@ -44,6 +44,9 @@ namespace ClassicUO.Game.Scripting
         // Indicated if the force (!) modifier was used
         public bool Force { get; }
 
+        // Indicated if the quiet (@) modifier was used
+        public bool Quiet { get; }
+
         // Time execution was created/requested
         public DateTime CreationTime { get; }
 
@@ -61,10 +64,11 @@ namespace ClassicUO.Game.Scripting
         }
 
         // Build execution
-        public CommandExecution(Command command, ParameterList parameters, bool force)
+        public CommandExecution(Command command, ParameterList parameters, bool quiet, bool force)
         {
             Cmd = command;
             Params = parameters;
+            Quiet = quiet;
             Force = force;
             CreationTime = DateTime.UtcNow;
         }
@@ -153,15 +157,23 @@ namespace ClassicUO.Game.Scripting
         // Execute the command according to queing rules and provided logic
         public bool Process(string command, Argument[] args, bool quiet, bool force)
         {
-            // Parse arguments when called, independent if this execution will be qued or not.
-            ParameterList parameters = new ParameterList(args, ParamNames);
-
             // Build execution and perform logic if queue should be bypassed
-            var execution = new CommandExecution(this, parameters, force);
+            var execution = CreateExecution(args, quiet, force);
             if (force && (Attribute & Attributes.ForceBypassQueue) == Attributes.ForceBypassQueue)
                 return execution.PerformWait();
             else Queues[Attribute].Enqueue(execution); // otherwise queue it
             return true;
+        }
+
+        // Retrieving an execution is showing that the Process logic may not be part of the command,
+        // but in the execution... If we add this line of tough to Jaedan feedback on the Queue, we may
+        // want to rename Execution to an Action class that allows both implementation of virtual methdods
+        // or passing delegates.
+        public CommandExecution CreateExecution(Argument[] args, bool quiet, bool force)
+        {
+            // Parse arguments when called, independent if this execution will be qued or not.
+            ParameterList parameters = new ParameterList(args, ParamNames);
+            return new CommandExecution(this, parameters, quiet, force);
         }
     }
 
@@ -448,7 +460,7 @@ namespace ClassicUO.Game.Scripting
                 // So queue it again with one less parameter
                 VirtualArgument arg = new VirtualArgument(dirArray[i]);
                 ParameterList newParams = new ParameterList(new Argument[1] { arg }, execution.Cmd.ParamNames);
-                Command.Queues[execution.Cmd.Attribute].Enqueue(new CommandExecution(execution.Cmd, newParams, execution.Force));
+                Command.Queues[execution.Cmd.Attribute].Enqueue(new CommandExecution(execution.Cmd, newParams, execution.Quiet, execution.Force));
             }
 
             return true;
