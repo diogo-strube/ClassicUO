@@ -151,7 +151,7 @@ namespace ClassicUO.Game.Scripting
         }
 
         // Execute the command according to queing rules and provided logic
-        public bool Process(Argument[] args, bool force)
+        public bool Process(string command, Argument[] args, bool quiet, bool force)
         {
             // Parse arguments when called, independent if this execution will be qued or not.
             ParameterList parameters = new ParameterList(args, ParamNames);
@@ -172,6 +172,7 @@ namespace ClassicUO.Game.Scripting
         public static Dictionary<string, Command> Definitions = new Dictionary<string, Command>();
         private static void AddDefinition(Command cmd)
         {
+            Interpreter.RegisterCommandHandler(cmd.Keyword, cmd.Process);
             Definitions.Add(cmd.Keyword, cmd);
         }
 
@@ -188,7 +189,7 @@ namespace ClassicUO.Game.Scripting
             AddDefinition(new Command("pushlist ('list name') ('element value') ['front'/'back']", PushList, WaitForMs(25)));
             AddDefinition(new Command("createlist ('list name')", CreateList, WaitForMs(25)));
             AddDefinition(new Command("removelist ('list name')", RemoveList, WaitForMs(25)));
-     
+            AddDefinition(new Command("msg ('text') [color]", Msg, WaitForMs(25)));
 
             ////Interpreter.RegisterCommandHandler("poplist", );
             //Interpreter.RegisterCommandHandler("pushlist", );
@@ -450,6 +451,15 @@ namespace ClassicUO.Game.Scripting
                 Command.Queues[execution.Cmd.Attribute].Enqueue(new CommandExecution(execution.Cmd, newParams, execution.Force));
             }
 
+            return true;
+        }
+
+        public static bool Msg(CommandExecution execution)
+        {
+            GameActions.Say(
+                execution.Params.NextAs<string>(ParameterList.Expectation.Mandatory),
+                hue: execution.Params.NextAs<ushort>()
+                );
             return true;
         }
 
@@ -1062,22 +1072,7 @@ namespace ClassicUO.Game.Scripting
         ////    return true;
         ////}
 
-        //public static bool Msg(string command, ParameterList args)
-        //{
-        //    switch (args.Length)
-        //    {
-        //        case 1:
-        //            GameActions.Say(args[0].As<string>());
-        //            break;
-        //        case 2:
-        //            GameActions.Say(args[0].As<string>(), hue: args[1].As<ushort>());
-        //            break;
-        //        default:
-        //            throw new ScriptRunTimeError(null, "Usage: msg ('text') [color]");
-        //    }
 
-        //    return true;
-        //}
 
         //private static bool Paperdoll(string command, ParameterList args)
         //{

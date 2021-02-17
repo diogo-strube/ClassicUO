@@ -762,16 +762,19 @@ namespace ClassicUO.Game.Scripting
             node = EvaluateModifiers(node, out bool quiet, out bool force, out _);
             try
             {
-                if(!Commands.Definitions.ContainsKey(node.Lexeme))
+                var handler = Interpreter.GetCommandHandler(node.Lexeme);
+
+                if (handler == null)
                     throw new ScriptRunTimeError(node, "Command is not defined");
 
-                var executionResult = Commands.Definitions[node.Lexeme].Process(ConstructArgumentList(ref node), force);
+                var cont = handler(node.Lexeme, ConstructArgumentList(ref node), quiet, force);
 
-                // Attention - even if command logic does noe execute, it parses arguments and therefore should be consuming all nodes
+                // Attention - Commdands are logically a blackbox to Interpreter and by calling a command the Interpreter expect nodes parsed.
+                // So, independent if command logic execute or not, it parses arguments and therefore should be consuming all nodes
                 if (node != null)
                     throw new ScriptRunTimeError(node, "Command did not consume all available ArgumentList");
 
-                return executionResult;
+                return cont;
             }
             catch(ScriptRunTimeError ex)
             {
@@ -901,14 +904,14 @@ namespace ClassicUO.Game.Scripting
 
         private bool EvaluateUnaryExpression(ref ASTNode node)
         {
-            node = EvaluateModifiers(node, out bool quiet, out _, out bool not);
+            node = EvaluateModifiers(node, out bool quiet, out bool force, out bool not);
 
             var handler = Interpreter.GetExpressionHandler(node.Lexeme);
 
             if (handler == null)
                 throw new ScriptRunTimeError(node, "Unknown expression");
 
-            var result = handler(node.Lexeme, ConstructArgumentList(ref node), quiet);
+            var result = handler(node.Lexeme, ConstructArgumentList(ref node), quiet, force);
 
             if (not)
                 return CompareOperands(ASTNodeType.EQUAL, result, false);
@@ -935,7 +938,7 @@ namespace ClassicUO.Game.Scripting
         {
             IComparable val;
 
-            node = EvaluateModifiers(node, out bool quiet, out _, out _);
+            node = EvaluateModifiers(node, out bool quiet, out bool force, out _);
             switch (node.Type)
             {
                 case ASTNodeType.INTEGER:
@@ -962,7 +965,7 @@ namespace ClassicUO.Game.Scripting
                         }
                         else
                         {
-                            val = handler(node.Lexeme, ConstructArgumentList(ref node), quiet);
+                            val = handler(node.Lexeme, ConstructArgumentList(ref node), quiet, force);
                         }
                         break;
                     }
@@ -982,9 +985,14 @@ namespace ClassicUO.Game.Scripting
         // Timers
         private static Dictionary<string, DateTime> _timers = new Dictionary<string, DateTime>();
 
+        // Commands
+        public delegate bool CommandHandler(string command, Argument[] args, bool quiet, bool force);
+
+        private static Dictionary<string, CommandHandler> _commandHandlers = new Dictionary<string, CommandHandler>();
+
         // Expressions
-        public delegate IComparable ExpressionHandler(string expression, Argument[] args, bool quiet);
-        public delegate T ExpressionHandler<T>(string expression, Argument[] args, bool quiet) where T : IComparable;
+        public delegate IComparable ExpressionHandler(string expression, Argument[] args, bool quiet, bool force);
+        public delegate T ExpressionHandler<T>(string expression, Argument[] args, bool quiet, bool force) where T : IComparable;
 
         private static Dictionary<string, ExpressionHandler> _exprHandlers = new Dictionary<string, ExpressionHandler>();
 
@@ -1014,7 +1022,7 @@ namespace ClassicUO.Game.Scripting
 
         public static void RegisterExpressionHandler<T>(string keyword, ExpressionHandler<T> handler) where T : IComparable
         {
-            _exprHandlers[keyword] = (expression, args, quiet) => handler(expression, args, quiet);
+            _exprHandlers[keyword] = (expression, args, quiet, force) => handler(expression, args, quiet, force);
         }
 
         public static ExpressionHandler GetExpressionHandler(string keyword)
@@ -1022,6 +1030,18 @@ namespace ClassicUO.Game.Scripting
             _exprHandlers.TryGetValue(keyword, out var expression);
 
             return expression;
+        }
+
+        public static void RegisterCommandHandler(string keyword, CommandHandler handler)
+        {
+            _commandHandlers[keyword] = handler;
+        }
+
+        public static CommandHandler GetCommandHandler(string keyword)
+        {
+            _commandHandlers.TryGetValue(keyword, out CommandHandler handler);
+
+            return handler;
         }
 
         public static void CreateList(string name)

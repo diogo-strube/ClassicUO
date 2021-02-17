@@ -38,9 +38,10 @@ namespace ClassicUO.Game.Scripting
             Interpreter.RegisterExpressionHandler("findobject", ExpressionToCommand);
         }
 
-        public static bool ExpressionToCommand(string expression, Argument[] args, bool force)
+        public static bool ExpressionToCommand(string expression, Argument[] args, bool quiet, bool force)
         {
-            return Commands.Definitions[expression].Process(args, force);
+            var handler = Interpreter.GetCommandHandler(expression);
+            return (handler != null && handler(expression, args, quiet, force));
         }
     }
 }
