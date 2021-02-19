@@ -25,8 +25,8 @@ namespace ClassicUO.Game.Scripting
             Write("direction", "northwest", "up");
         }
 
-        // Registry of default values for parameters organized by params type-name (as stated in Command)
-        // Paremeter values are stored as objects are a same parameter may not have multiple types (like int, short, string, etc)
+        // Registry of default values for a given arg organized by the arg type-name (as stated in Command)
+        // Arg (local type values are stored as objects are as a given arg type may not have multiple native types (like int, short, string, etc)
         private static Dictionary<string, Dictionary<string, object>> _local = new Dictionary<string, Dictionary<string, object>>();
         public static bool Read<T>(string paramName, string paramValue, ref T paramDefault)
         {

@@ -119,8 +119,7 @@ namespace ClassicUO.Game.Scripting
     }
 
     // Encapsulate AST arguments so that command specific definitions can be evaluated and more easly processed
-    // Using term "parameter" to make difference clear and align term used by scripting languages
-    public class ParameterList
+    public class ArgumentList
     {
         // Definition (name) for the type of each AST in the list
         private string[] _definitions;
@@ -131,7 +130,7 @@ namespace ClassicUO.Game.Scripting
         // Index used to organize traversal of arguments
         private int _index;
 
-        // Index used to organize traversal of optional arguments and definitions pf parameters
+        // Index used to organize traversal of optional arguments and the metainfo of each argument
         private int _virtualIndex;
 
         public enum Expectation
@@ -140,7 +139,7 @@ namespace ClassicUO.Game.Scripting
             Optional,
         }
 
-        public ParameterList(Argument[] args, string[] definitions)
+        public ArgumentList(Argument[] args, string[] definitions)
         {
             _args = args;
             _definitions = definitions;

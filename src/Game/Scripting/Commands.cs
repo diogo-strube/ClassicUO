@@ -38,8 +38,8 @@ namespace ClassicUO.Game.Scripting
         // Command to be executed
         public Command Cmd { get; }
 
-        // Parameters given of this specific execution
-        public ParameterList Params { get; }
+        // Argument list given of this specific execution
+        public ArgumentList ArgList { get; }
 
         // Indicated if the force (!) modifier was used
         public bool Force { get; }
@@ -64,10 +64,10 @@ namespace ClassicUO.Game.Scripting
         }
 
         // Build execution
-        public CommandExecution(Command command, ParameterList parameters, bool quiet, bool force)
+        public CommandExecution(Command command, ArgumentList argList, bool quiet, bool force)
         {
             Cmd = command;
-            Params = parameters;
+            ArgList = argList;
             Quiet = quiet;
             Force = force;
             CreationTime = DateTime.UtcNow;
@@ -102,8 +102,8 @@ namespace ClassicUO.Game.Scripting
         // Keyword in the script syntax
         public string Keyword { get; }
 
-        // Name of parameters used by this command
-        public string[] ParamNames { get; }
+        // Type of the arguments used by this command
+        public string[] ArgTypes { get; }
 
         // Handler to perform command logic (action of the command)
         public Handler ExecutionLogic { get; }
@@ -144,14 +144,14 @@ namespace ClassicUO.Game.Scripting
 
             // Processing keywords and arguments in constructor to avoid logic on every command execution
             Keyword = usage.Substring(0, usage.IndexOf(' '));
-            ParamNames = String.Join("", usage.Substring(usage.IndexOf(' ') + 1).Split('[', ']', '(', ')')).Split(' '); // keeping just name - same regex [\[\]\(\)]
+            ArgTypes = String.Join("", usage.Substring(usage.IndexOf(' ') + 1).Split('[', ']', '(', ')')).Split(' '); // keeping just name - same regex [\[\]\(\)]
         }
         #endregion
 
-        // List parameters from args collected by the Abstract Syntax Tree (AST)
-        public ParameterList ListParams(Argument[] args)
+        // Create list for args collected by the Abstract Syntax Tree (AST)
+        public ArgumentList ListArgs(Argument[] args)
         {
-            return new ParameterList(args, ParamNames);
+            return new ArgumentList(args, ArgTypes);
         }
 
         // Execute the command according to queing rules and provided logic
@@ -172,8 +172,8 @@ namespace ClassicUO.Game.Scripting
         public CommandExecution CreateExecution(Argument[] args, bool quiet, bool force)
         {
             // Parse arguments when called, independent if this execution will be qued or not.
-            ParameterList parameters = new ParameterList(args, ParamNames);
-            return new CommandExecution(this, parameters, quiet, force);
+            ArgumentList argList = new ArgumentList(args, ArgTypes);
+            return new CommandExecution(this, argList, quiet, force);
         }
     }
 
@@ -358,11 +358,11 @@ namespace ClassicUO.Game.Scripting
 
         public static bool FindObject(CommandExecution execution)
         {
-            var serial = execution.Params.NextAs<uint>(ParameterList.Expectation.Mandatory);
-            var color = execution.Params.NextAs<ushort>();
-            var source = execution.Params.NextAs<string>();
-            var amount = execution.Params.NextAs<int>();
-            var range = execution.Params.NextAs<int>();
+            var serial = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
+            var color = execution.ArgList.NextAs<ushort>();
+            var source = execution.ArgList.NextAs<string>();
+            var amount = execution.ArgList.NextAs<int>();
+            var range = execution.ArgList.NextAs<int>();
 
             Entity entity = CmdFindEntityBySerial(serial, color, source, range);
             if (entity != null)
@@ -376,15 +376,15 @@ namespace ClassicUO.Game.Scripting
 
         private static bool Attack(CommandExecution execution)
         {
-            var serial = execution.Params.NextAs<uint>(ParameterList.Expectation.Mandatory);
+            var serial = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
             GameActions.Attack(serial);
             return true;
         }
 
         private static bool PopList(CommandExecution execution)
         {
-            var listName = execution.Params.NextAs<string>(ParameterList.Expectation.Mandatory);
-            var value = execution.Params.NextAs<string>(ParameterList.Expectation.Mandatory);
+            var listName = execution.ArgList.NextAs<string>(ArgumentList.Expectation.Mandatory);
+            var value = execution.ArgList.NextAs<string>(ArgumentList.Expectation.Mandatory);
 
             if (value == "front")
             {
@@ -403,9 +403,9 @@ namespace ClassicUO.Game.Scripting
             else
             {
                 if (execution.Force)
-                    while (Interpreter.PopList(listName, execution.Params[1])) { }
+                    while (Interpreter.PopList(listName, execution.ArgList[1])) { }
                 else
-                    Interpreter.PopList(listName, execution.Params[1]);
+                    Interpreter.PopList(listName, execution.ArgList[1]);
             }
 
             return true;
@@ -413,30 +413,30 @@ namespace ClassicUO.Game.Scripting
 
         private static bool RemoveList(CommandExecution execution)
         {
-            var listName = execution.Params.NextAs<string>(ParameterList.Expectation.Mandatory);
+            var listName = execution.ArgList.NextAs<string>(ArgumentList.Expectation.Mandatory);
             Interpreter.DestroyList(listName);
             return true;
         }
 
         private static bool CreateList(CommandExecution execution)
         {
-            var listName = execution.Params.NextAs<string>(ParameterList.Expectation.Mandatory);
+            var listName = execution.ArgList.NextAs<string>(ArgumentList.Expectation.Mandatory);
             Interpreter.CreateList(listName);
             return true;
         }
 
         private static bool ClearList(CommandExecution execution)
         {
-            var listName = execution.Params.NextAs<string>(ParameterList.Expectation.Mandatory);
+            var listName = execution.ArgList.NextAs<string>(ArgumentList.Expectation.Mandatory);
             Interpreter.ClearList(listName);
             return true;
         }
 
         private static bool PushList(CommandExecution execution)
         {
-            var name = execution.Params.NextAs<string>(ParameterList.Expectation.Mandatory);
-            var values = execution.Params.NextAsArray<string>(ParameterList.Expectation.Mandatory);
-            var pos = execution.Params.NextAs<string>(ParameterList.Expectation.Mandatory);
+            var name = execution.ArgList.NextAs<string>(ArgumentList.Expectation.Mandatory);
+            var values = execution.ArgList.NextAsArray<string>(ArgumentList.Expectation.Mandatory);
+            var pos = execution.ArgList.NextAs<string>(ArgumentList.Expectation.Mandatory);
             bool front = (pos == "force");
             foreach (var val in values)
             {
@@ -448,7 +448,7 @@ namespace ClassicUO.Game.Scripting
         private static bool Walk(CommandExecution execution)
         {
             // Be prepared for multiple directions -> walk "North, East, East, West, South, Southeast"
-            var dirArray = execution.Params.NextAsArray<string>(ParameterList.Expectation.Mandatory);
+            var dirArray = execution.ArgList.NextAsArray<string>(ArgumentList.Expectation.Mandatory);
 
             // At least one is mandatory, so perform walk command on it
             var direction = (Direction)Enum.Parse(typeof(Direction), dirArray[0], true);
@@ -457,9 +457,9 @@ namespace ClassicUO.Game.Scripting
             // For all remaining, explode it as one command per single direction
             for (int i = 1; i < dirArray.Length; i++)
             {
-                // So queue it again with one less parameter
+                // So queue it again with one less arg in the list
                 VirtualArgument arg = new VirtualArgument(dirArray[i]);
-                ParameterList newParams = new ParameterList(new Argument[1] { arg }, execution.Cmd.ParamNames);
+                ArgumentList newParams = new ArgumentList(new Argument[1] { arg }, execution.Cmd.ArgTypes);
                 Command.Queues[execution.Cmd.Attribute].Enqueue(new CommandExecution(execution.Cmd, newParams, execution.Quiet, execution.Force));
             }
 
@@ -469,8 +469,8 @@ namespace ClassicUO.Game.Scripting
         public static bool Msg(CommandExecution execution)
         {
             GameActions.Say(
-                execution.Params.NextAs<string>(ParameterList.Expectation.Mandatory),
-                hue: execution.Params.NextAs<ushort>()
+                execution.ArgList.NextAs<string>(ArgumentList.Expectation.Mandatory),
+                hue: execution.ArgList.NextAs<ushort>()
                 );
             return true;
         }
