@@ -73,10 +73,9 @@ namespace ClassicUO.Game.Scripting
             CreationTime = DateTime.UtcNow;
         }
 
-        // Inspired by Razor souce code, this method check if it is time to execute the command
-        // and if the time is right, perform the execution
+        // This method check if it is time to execute the command and if the time is right, perform the execution
         // Logic inside may be complex, checking for a given target or waiting for a given gump
-        public bool PerformWait()
+        public bool Process()
         {
             if (Cmd.WaitLogic(this)) // check if waiting is over (no blocking, we keep checking as Razor does)
             {
@@ -160,7 +159,7 @@ namespace ClassicUO.Game.Scripting
             // Build execution and perform logic if queue should be bypassed
             var execution = CreateExecution(args, quiet, force);
             if (force && (Attribute & Attributes.ForceBypassQueue) == Attributes.ForceBypassQueue)
-                return execution.PerformWait();
+                return execution.Process();
             else Queues[Attribute].Enqueue(execution); // otherwise queue it
             return true;
         }

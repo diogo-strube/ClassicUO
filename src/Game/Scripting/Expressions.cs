@@ -41,7 +41,7 @@ namespace ClassicUO.Game.Scripting
         public static bool ExpressionToCommand(string expression, Argument[] args, bool quiet, bool force)
         {
             var execution = Commands.Definitions[expression].CreateExecution(args, quiet, force);
-            return execution.PerformWait();
+            return execution.Process();
         }
     }
 }

@@ -235,7 +235,7 @@ namespace ClassicUO.Game.Managers
                 // Keep processing all command 
                 foreach (var queue in Command.Queues)
                 {
-                    if(queue.Value.Count > 0 && queue.Value.Peek().PerformWait())
+                    if(queue.Value.Count > 0 && queue.Value.Peek().Process())
                         queue.Value.Dequeue();
                 }
             }
