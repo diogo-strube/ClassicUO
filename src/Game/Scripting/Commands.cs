@@ -142,8 +142,13 @@ namespace ClassicUO.Game.Scripting
                 Queues.Add(Attribute, new Queue<CommandExecution>());
 
             // Processing keywords and arguments in constructor to avoid logic on every command execution
-            Keyword = usage.Substring(0, usage.IndexOf(' '));
-            ArgTypes = String.Join("", usage.Substring(usage.IndexOf(' ') + 1).Split('[', ']', '(', ')')).Split(' '); // keeping just name - same regex [\[\]\(\)]
+            if (usage.Count(f => f == ' ') > 0)
+            {
+                Keyword = usage.Substring(0, usage.IndexOf(' '));
+                ArgTypes = String.Join("", usage.Substring(usage.IndexOf(' ') + 1).Split('[', ']', '(', ')')).Split(' '); // keeping just name - same regex [\[\]\(\)]
+            }
+            else
+                Keyword = usage;        
         }
         #endregion
 
@@ -212,9 +217,21 @@ namespace ClassicUO.Game.Scripting
             AddDefinition(new Command("attack (serial)", Attack, WaitForMs(500), Command.Attributes.SimpleInterAction));
             AddDefinition(new Command("clearhands ('left'/'right'/'both')", ClearHands, WaitForMs(500), Command.Attributes.ComplexInterAction));
             AddDefinition(new Command("clickobject (serial)", ClickObject, WaitForMs(500), Command.Attributes.SimpleInterAction));
+            AddDefinition(new Command("bandageself", BandageSelf, WaitForMs(500), Command.Attributes.SimpleInterAction));
+            AddDefinition(new Command("usetype (graphic) [color] [source] [range or search level]", UseType, WaitForMs(500), Command.Attributes.SimpleInterAction));
+            AddDefinition(new Command("useobject (serial)", UseObject, WaitForMs(500), Command.Attributes.SimpleInterAction));
+            AddDefinition(new Command("useonce (graphic) [color]", UseOnce, WaitForMs(500), Command.Attributes.SimpleInterAction));
+            //moveitem (serial) (destination) [(x, y, z)] [amount]
+            //moveitemoffset(serial) 'ground'[(x, y, z)][amount]
+            //movetype(graphic)(source)(destination)[(x, y, z)][color][amount][range or search level]
+            //movetypeoffset(graphic)(source) 'ground'[(x, y, z)][color][amount][range or search level]
+            AddDefinition(new Command("walk (direction)", MovementLogic(false), WaitForMovement));
+            AddDefinition(new Command("turn (direction)", MovementLogic(false), WaitForMovement));
+            AddDefinition(new Command("run (direction)", MovementLogic(true), WaitForMovement));
 
+            AddDefinition(new Command("findtype (graphic) [color] [source] [amount] [range or search level]", BandageSelf, WaitForMs(500), Command.Attributes.SimpleInterAction));
             AddDefinition(new Command("findobject (serial) [color] [source] [amount] [range]", FindObject, WaitForMs(100), Command.Attributes.StateAction));
-            AddDefinition(new Command("walk (direction)", Walk, WaitForMovement));
+            
             AddDefinition(new Command("poplist ('list name') ('element value'/'front'/'back')", PopList, WaitForMs(25)));
             AddDefinition(new Command("pushlist ('list name') ('element value') ['front'/'back']", PushList, WaitForMs(25)));
             AddDefinition(new Command("createlist ('list name')", CreateList, WaitForMs(25)));
@@ -232,8 +249,6 @@ namespace ClassicUO.Game.Scripting
             //Interpreter.RegisterCommandHandler("fly", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("land", UnimplementedCommand);
             
-            //Interpreter.RegisterCommandHandler("bandageself", BandageSelf);
-            //Interpreter.RegisterCommandHandler("usetype", UseType);
             //Interpreter.RegisterCommandHandler("useobject", UseObject);
             //Interpreter.RegisterCommandHandler("moveitem", MoveItem);
             //Interpreter.RegisterCommandHandler("walk", Walk);
@@ -250,7 +265,6 @@ namespace ClassicUO.Game.Scripting
             //Interpreter.RegisterExpressionHandler("findobject", ExpFindObject);
 
             //#region Deprecated (but supported)
-            //Interpreter.RegisterCommandHandler("useonce", UseOnce);
             //Interpreter.RegisterCommandHandler("clearuseonce", Deprecated);
             //#endregion
 
@@ -426,19 +440,66 @@ namespace ClassicUO.Game.Scripting
             return true;
         }
 
-        public static bool FindObject(CommandExecution execution)
+        private static bool BandageSelf(CommandExecution execution)
+        {
+            GameActions.BandageSelf();
+            // TODO: maybe return false if no badages or other constraints?
+            return true;
+        }
+
+        private static bool UseType(CommandExecution execution)
+        {
+            Item item = CmdFindItemByGraphic(
+                execution.ArgList.NextAs<ushort>(ArgumentList.Expectation.Mandatory),
+                execution.ArgList.NextAs<ushort>(),
+                execution.ArgList.NextAs<string>(),
+                0,
+                execution.ArgList.NextAs<int>()
+                );
+
+            if (item != null)
+            {
+                GameActions.DoubleClick(item.Serial);
+                return true;
+            }
+            else return false;
+        }
+
+        private static bool UseObject(CommandExecution execution)
         {
             var serial = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
-            var color = execution.ArgList.NextAs<ushort>();
-            var source = execution.ArgList.NextAs<string>();
-            var amount = execution.ArgList.NextAs<int>();
-            var range = execution.ArgList.NextAs<int>();
+            GameActions.DoubleClick(serial);
+            return true;
+        }
 
-            Entity entity = CmdFindEntityBySerial(serial, color, source, range);
+        private static bool UseOnce(CommandExecution execution)
+        {
+            Item item = CmdFindItemByGraphic(
+                execution.ArgList.NextAs<ushort>(ArgumentList.Expectation.Mandatory),
+                execution.ArgList.NextAs<ushort>()
+                );
+
+            if (item != null)
+            {
+                GameActions.DoubleClick(item.Serial);
+                return true;
+            }
+            else return false;
+        }
+
+        public static bool FindObject(CommandExecution execution)
+        {
+            Entity entity = CmdFindEntityBySerial(
+                execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory),
+                execution.ArgList.NextAs<ushort>(),
+                execution.ArgList.NextAs<string>(),
+                execution.ArgList.NextAs<int>(),
+                execution.ArgList.NextAs<int>()
+                );
+    
             if (entity != null)
             {
-                if ((entity is Item item && item.Amount > amount) || entity is Mobile)
-                    Aliases.Write<uint>("found", entity.Serial); // should this be a scope variable?
+                Aliases.Write<uint>("found", entity.Serial);
                 return true;
             }
             else return false;
@@ -508,27 +569,6 @@ namespace ClassicUO.Game.Scripting
             return true;
         }
 
-        private static bool Walk(CommandExecution execution)
-        {
-            // Be prepared for multiple directions -> walk "North, East, East, West, South, Southeast"
-            var dirArray = execution.ArgList.NextAsArray<string>(ArgumentList.Expectation.Mandatory);
-
-            // At least one is mandatory, so perform walk command on it
-            var direction = (Direction)Enum.Parse(typeof(Direction), dirArray[0], true);
-            World.Player.Walk(direction, ProfileManager.CurrentProfile.AlwaysRun);
-
-            // For all remaining, explode it as one command per single direction
-            for (int i = 1; i < dirArray.Length; i++)
-            {
-                // So queue it again with one less arg in the list
-                VirtualArgument arg = new VirtualArgument(dirArray[i]);
-                ArgumentList newParams = new ArgumentList(new Argument[1] { arg }, execution.Cmd.ArgTypes);
-                Command.Queues[execution.Cmd.Attribute].Enqueue(new CommandExecution(execution.Cmd, newParams, execution.Quiet, execution.Force));
-            }
-
-            return true;
-        }
-
         public static bool Msg(CommandExecution execution)
         {
             GameActions.Say(
@@ -553,71 +593,23 @@ namespace ClassicUO.Game.Scripting
             return true;
         }
 
-        
+        private static bool FindType(CommandExecution execution)
+        {
+            Item item = CmdFindItemByGraphic(
+                execution.ArgList.NextAs<ushort>(ArgumentList.Expectation.Mandatory),
+                execution.ArgList.NextAs<ushort>(),
+                execution.ArgList.NextAs<string>(),
+                execution.ArgList.NextAs<int>(),
+                execution.ArgList.NextAs<int>()
+                );
 
-        //private static bool BandageSelf(string command, ParameterList args)
-        //{
-        //    GameActions.BandageSelf();
-        //    // TODO: maybe return false if no badages or other constraints?
-        //    return true;
-        //}
-
-        //private static bool UseType(string command, ParameterList args)
-        //{
-        //    try
-        //    {
-        //        var graphic = args.NextAs<ushort>(ParameterList.ArgumentType.Mandatory);
-        //        Item item = CmdFindEntityByGraphic(graphic,
-        //            args.NextAs<ushort>(),
-        //            args.NextAsSource(),
-        //            args.NextAs<int>());
-
-        //        if (item != null)
-        //            GameActions.DoubleClick(item.Serial);
-        //        else
-        //            throw new ScriptRunTimeError(null, $"Script Error: Couldn't find '{graphic.ToString("X3")}'");
-
-        //        return true;
-        //    }
-        //    catch (ScriptRunTimeError ex)
-        //    {
-        //        throw new ScriptSyntaxError("Usage: usetype (graphic) [color] [source] [range or search level]", ex);
-        //    }
-        //}
-
-        //private static bool UseObject(string command, ParameterList args)
-        //{
-        //    try
-        //    {
-        //        var serial = args.NextAsSerial(ParameterList.ArgumentType.Mandatory);
-        //        GameActions.DoubleClick(serial);
-        //        return true;
-        //    }
-        //    catch (ScriptRunTimeError ex)
-        //    {
-        //        throw new ScriptSyntaxError("Usage: useobject (serial)", ex);
-        //    }
-        //}
-
-        //private static bool UseOnce(string command, ParameterList args)
-        //{
-        //    try
-        //    {
-        //        var graphic = args.NextAs<ushort>(ParameterList.ArgumentType.Mandatory);
-        //        Item item = CmdFindEntityByGraphic(graphic, args.NextAs<ushort>());
-
-        //        if (item != null)
-        //            GameActions.DoubleClick(item.Serial);
-        //        else
-        //            throw new ScriptRunTimeError(null, $"Script Error: Couldn't find '{graphic.ToString("X3")}'");
-
-        //        return true;
-        //    }
-        //    catch (ScriptRunTimeError ex)
-        //    {
-        //        throw new ScriptSyntaxError("Usage: useonce (graphic) [color]", ex);
-        //    }
-        //}
+            if (item != null)
+            {
+                Aliases.Write<uint>("found", item.Serial);
+                return true;
+            }
+            else return false;
+        }
 
         //private static bool MoveItem(string command, ParameterList args)
         //{
@@ -821,28 +813,6 @@ namespace ClassicUO.Game.Scripting
         //        throw new ScriptSyntaxError("Usage: feed (serial) ('food name'/'food group'/'any'/graphic) [color] [amount]", ex);
         //    }
         //}
-
-
-
-        //private static bool FindType(string command, ParameterList args)
-        //{
-        //    try
-        //    {
-        //        var graphic = args.NextAs<ushort>(ParameterList.ArgumentType.Mandatory);
-        //        var color = args.NextAs<ushort>();
-        //        var source = args.NextAsSource();
-        //        var amount = args.NextAs<int>();
-        //        var range = args.NextAs<int>();
-
-        //        Item item = CmdFindEntityByGraphic(graphic, color, source, range);
-        //        return item != null && item.Amount > amount;
-        //    }
-        //    catch (ScriptRunTimeError ex)
-        //    {
-        //        throw new ScriptSyntaxError("Usage: findtype (graphic) [color] [source] [amount] [range or search level]", ex);
-        //    }
-        //}
-
 
         //private static bool UnimplementedCommand(string command, ParameterList args)
         //{
@@ -1478,7 +1448,7 @@ namespace ClassicUO.Game.Scripting
 
         // HELPER FUNCTIONS FOR THE COMMANDS
 
-        private static Entity CmdFindEntityBySerial(uint serial, ushort color, string source = "any", int range = 0)
+        private static Entity CmdFindEntityBySerial(uint serial, ushort color, string source = "any", int amount = 0, int range = 0)
         {
             // Try fetching and Item from Serial
             Entity entity = null;
@@ -1499,14 +1469,18 @@ namespace ClassicUO.Game.Scripting
                 entity = World.Player.FindItemByLayer(layer)?.FindItem(graphic, color);
             }
 
+            // If we have an item, check ammount
+            if (entity != null && entity is Item item && item.Amount < amount)
+                return null;
+
             // Try fetching a Mobile from Serial
             if (entity == null)
                 entity = World.GetOrCreateMobile(serial);
-
+            
             return entity;
         }
 
-        private static Item CmdFindItemByGraphic(ushort graphic, ushort color = ushort.MaxValue, string source = "any", int range = 0)
+        private static Item CmdFindItemByGraphic(ushort graphic, ushort color = ushort.MaxValue, string source = "any", int amount = 0, int range = 0)
         {
             Item item = null;
             if (source == "any")
@@ -1523,7 +1497,32 @@ namespace ClassicUO.Game.Scripting
                 item = World.Player.FindItemByLayer(layer)?.FindItem(graphic, color);
             }
 
-            return item;
+            if (item != null && item.Amount < amount)
+                return null;
+            else return item;
+        }
+
+        public static Command.Handler MovementLogic(bool forceRun = false)
+        {
+            return (execution) => {
+                // Be prepared for multiple directions -> walk "North, East, East, West, South, Southeast"
+                var dirArray = execution.ArgList.NextAsArray<string>(ArgumentList.Expectation.Mandatory);
+
+                // At least one is mandatory, so perform walk command on it
+                var direction = (Direction)Enum.Parse(typeof(Direction), dirArray[0], true);
+                World.Player.Walk(direction, forceRun || ProfileManager.CurrentProfile.AlwaysRun);
+
+                // For all remaining, explode it as one command per single direction
+                for (int i = 1; i < dirArray.Length; i++)
+                {
+                    // So queue it again with one less arg in the list
+                    VirtualArgument arg = new VirtualArgument(dirArray[i]);
+                    ArgumentList newParams = new ArgumentList(new Argument[1] { arg }, execution.Cmd.ArgTypes);
+                    Command.Queues[execution.Cmd.Attribute].Enqueue(new CommandExecution(execution.Cmd, newParams, execution.Quiet, execution.Force));
+                }
+
+                return true;
+            };
         }
 
         // Wait for a given amount of milliseconds (suing "curry" technique for param reduction)
@@ -1535,13 +1534,13 @@ namespace ClassicUO.Game.Scripting
         public static bool WaitForMovement(CommandExecution execution)
         { 
             // Based on command and settings we select the expected delay
-            var movementDelay = Constants.PLAYER_WALKING_DELAY * 2.0;    // walk default delay
+            var movementDelay = Constants.PLAYER_WALKING_DELAY * 3.0;    // walk default delay
             if (World.Player.FindItemByLayer(Layer.Mount) != null)
-                movementDelay = Constants.PLAYER_WALKING_DELAY * 1.2;    // mount default delay
+                movementDelay = Constants.PLAYER_WALKING_DELAY * 2.0;    // mount default delay
             else if (ProfileManager.CurrentProfile.AlwaysRun || execution.Cmd.Keyword == "run")
-                movementDelay = Constants.PLAYER_WALKING_DELAY * 1.2;    // run default delay
+                movementDelay = Constants.PLAYER_WALKING_DELAY * 2.0;    // run default delay
             else if (execution.Cmd.Keyword == "turn")
-                movementDelay = Constants.TURN_DELAY * 1.2;              // turn default delay
+                movementDelay = Constants.TURN_DELAY * 2.0;              // turn default delay
 
             return ((DateTime.UtcNow - CommandExecution.LastExecuted(execution.Cmd.Keyword)).TotalMilliseconds > movementDelay);
         }
