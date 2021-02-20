@@ -67,7 +67,7 @@ namespace ClassicUO.Game.Scripting
             var converter = TypeDescriptor.GetConverter(typeof(T));
             if (converter != null)
             {
-                if (token.StartsWith("0x"))
+                if (token.StartsWith("0x") && typeof(T) != typeof(string))
                 {
                     long hexValue = long.Parse(token.Substring(2), NumberStyles.AllowHexSpecifier);
                     return (T)Convert.ChangeType(hexValue, typeof(T));

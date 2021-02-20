@@ -216,6 +216,8 @@ namespace ClassicUO.Game.Scripting
             AddDefinition(new Command("createlist ('list name')", CreateList, WaitForMs(25)));
             AddDefinition(new Command("removelist ('list name')", RemoveList, WaitForMs(25)));
             AddDefinition(new Command("msg ('text') [color]", Msg, WaitForMs(25)));
+            AddDefinition(new Command("setalias ('alias name') [serial]", SetAlias, WaitForMs(25)));
+            AddDefinition(new Command("unsetalias ('alias name')", UnsetAlias, WaitForMs(25)));
 
             ////Interpreter.RegisterCommandHandler("poplist", );
             //Interpreter.RegisterCommandHandler("pushlist", );
@@ -239,8 +241,7 @@ namespace ClassicUO.Game.Scripting
             //Interpreter.RegisterCommandHandler("useskill", UseSkill);
             //Interpreter.RegisterCommandHandler("feed", Feed);
 
-            //Interpreter.RegisterCommandHandler("unsetalias", UnsetAlias);
-            //Interpreter.RegisterCommandHandler("setalias", SetAlias);
+
 
 
 
@@ -486,6 +487,21 @@ namespace ClassicUO.Game.Scripting
                 execution.ArgList.NextAs<string>(ArgumentList.Expectation.Mandatory),
                 hue: execution.ArgList.NextAs<ushort>()
                 );
+            return true;
+        }
+
+        private static bool SetAlias(CommandExecution execution)
+        {
+            Aliases.Write<uint>(
+                execution.ArgList.NextAs<string>(ArgumentList.Expectation.Mandatory),
+                execution.ArgList.NextAs<uint>()
+                );
+            return true;
+        }
+
+        private static bool UnsetAlias(CommandExecution execution)
+        {
+            Aliases.Remove(typeof(uint), execution.ArgList.NextAs<string>(ArgumentList.Expectation.Mandatory));
             return true;
         }
 
@@ -917,15 +933,7 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //private static bool SetAlias(string command, ParameterList args)
-        //{
-        //    if (args.Length != 2)
-        //        throw new ScriptRunTimeError(null, "Usage: setalias ('name') [serial]");
 
-        //    Interpreter.SetAlias(args[0].As<string>(), args[1].As<uint>());
-
-        //    return true;
-        //}
 
         ////private static bool PromptAlias(string command, ParameterList args)
         ////{
@@ -990,18 +998,6 @@ namespace ClassicUO.Game.Scripting
 
         ////    return true;
         ////}
-
-
-
-        //private static bool UnsetAlias(string command, ParameterList args)
-        //{
-        //    if (args.Length == 0)
-        //        throw new ScriptRunTimeError(null, "Usage: unsetalias (string)");
-
-        //    Interpreter.SetAlias(args[0].As<string>(), 0);
-
-        //    return true;
-        //}
 
         //private static bool ShowNames(string command, ParameterList args)
         //{
