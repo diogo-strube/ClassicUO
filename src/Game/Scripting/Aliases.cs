@@ -4,6 +4,7 @@ using static ClassicUO.Game.Scripting.Interpreter;
 
 namespace ClassicUO.Game.Scripting
 {
+    // Links a Serial to any given word (ONLY FOR SERIAL)
     public static class Aliases
     {
         // Called by upper management class to register all the desired aliases
@@ -11,43 +12,6 @@ namespace ClassicUO.Game.Scripting
         {
             // Player commons
             Write<uint>("mount", Mount);
-
-            // Colors
-            Write("color", "any", ushort.MaxValue);
-
-            // Source
-            Write("source", "", "backpack");
-
-            // Directions
-            Write("direction", "southeast", "down");
-            Write("direction", "southwest", "left");
-            Write("direction", "northeast", "right");
-            Write("direction", "northwest", "up");
-        }
-
-        // Registry of default values for a given arg organized by the arg type-name (as stated in Command)
-        // Arg (local type values are stored as objects are as a given arg type may not have multiple native types (like int, short, string, etc)
-        private static Dictionary<string, Dictionary<string, object>> _local = new Dictionary<string, Dictionary<string, object>>();
-        public static bool Read<T>(string paramName, string paramValue, ref T paramDefault)
-        {
-            object obj = null;
-            if (_local.ContainsKey(paramName) && _local[paramName].ContainsKey(paramValue) && _local[paramName].TryGetValue(paramValue, out obj))
-            {
-                paramDefault = (T)obj;
-                return true;
-            }
-            else return false;
-        }
-        public static void Write(string paramName, string paramValue, object paramDefault)
-        {
-            if (!_local.ContainsKey(paramName))
-                _local.Add(paramName, new Dictionary<string, object>());
-            _local[paramName].Add(paramValue, paramDefault);
-        }
-        public static void Remove(string paramName, string paramValue)
-        {
-            if (_local.ContainsKey(paramName) && _local[paramName].ContainsKey(paramValue))
-                _local[paramName].Remove(paramValue);
         }
 
         // Registry of global aliases mapping a name to a value

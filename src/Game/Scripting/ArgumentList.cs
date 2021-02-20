@@ -26,7 +26,7 @@ namespace ClassicUO.Game.Scripting
         }
 
         // Generic method to interpreter an argument as the desired type T
-        public virtual T As<T>(string localAlias = "")
+        public virtual T As<T>(/*string localAlias = ""*/)
         {
             if (_node.Lexeme == null)
                 throw new ScriptRunTimeError(_node, "Cannot convert argument to " + typeof(T).FullName);
@@ -36,20 +36,15 @@ namespace ClassicUO.Game.Scripting
             if (arg != null)
                 return arg.As<T>();
 
-            // 2 - Try to resolve it as a local alias (like a ushort set to 0, when a "color", should be ushort.MaxValue)
-            T value = default(T);
-            if (localAlias != string.Empty)
+            // 2 - Try to resolve it as a global alias (only if Serial)
+            if (_node.Type == ASTNodeType.SERIAL)
             {
-                string content = (string)Convert.ChangeType(_node.Lexeme, typeof(string));
-                if(Aliases.Read<T>(localAlias, content, ref value))
+                T value = default(T);
+                if (Aliases.Read<T>(_node.Lexeme, ref value))
                     return value;
             }
 
-            // 3 - Try to resolve it as a global alias (like every uint as 'backpack' maps to the backpack serial)
-            if (Aliases.Read<T>(_node.Lexeme, ref value))
-                return value;
-
-            // 4 - If neither a scope variable or an alias, convert type based on Lexeme
+            // 3 - If neither a scope variable or an alias, convert type based on Lexeme
             if(typeof(T) == typeof(string))
                 return (T)Convert.ChangeType(_node.Lexeme, typeof(string));
             else return TypeConverter.To<T>(_node.Lexeme);
@@ -87,31 +82,29 @@ namespace ClassicUO.Game.Scripting
     // A virtualization of the Argument so that arguments may be created and injected in commands on the fly
     public class VirtualArgument : Argument
     {
+        // Type of node represented by this virtual argument
+        protected ASTNodeType _type;
         // Content of this virtual argument
         protected string _value;
 
-        public VirtualArgument(string value) : base(null, null)
+        public VirtualArgument(string value, ASTNodeType type = ASTNodeType.STRING) : base(null, null)
         {
+            _type = type;
             _value = value;
         }
 
         // Generic method to interpreter an argument as the desired type T
-        public override T As<T>(string localAlias = "")
+        public override T As<T>(/*string localAlias = ""*/)
         {
-            // 1 - Try to resolve it as a local alias (like a ushort set to 0, when a "color", should be ushort.MaxValue)
-            T value = default(T);
-            if (localAlias != string.Empty)
+            // Try to resolve it as a global alias (only if Serial)
+            if (_type == ASTNodeType.SERIAL)
             {
-                string content = (string)Convert.ChangeType(_value, typeof(string));
-                if (Aliases.Read<T>(localAlias, content, ref value))
+                T value = default(T);
+                if (Aliases.Read<T>(_node.Lexeme, ref value))
                     return value;
             }
 
-            // 2 - Try to resolve it as a global alias (like every uint as 'backpack' maps to the backpack serial)
-            if (Aliases.Read<T>(_value, ref value))
-                return value;
-
-            // 3 - If neither a scope variable or an alias, convert type based on stored value
+            // If neither a scope variable or an alias, convert type based on stored value
             if (typeof(T) == typeof(string))
                 return (T)Convert.ChangeType(_value, typeof(string));
             else return TypeConverter.To<T>(_value);
@@ -121,6 +114,10 @@ namespace ClassicUO.Game.Scripting
     // Encapsulate AST arguments so that command specific definitions can be evaluated and more easly processed
     public class ArgumentList
     {
+        // Code restricted to ArgumentList, and not in Aliases, as this is mapping value types beyond serial (color, source, etc)
+        // Mapping a given value to another based on type (local type values are stored as objects are as a given arg type may not have multiple native types (like int, short, string, etc)
+        private static Dictionary<string, Dictionary<object, object>> _argMap = new Dictionary<string, Dictionary<object, object>>();
+
         // Definition (name) for the type of each AST in the list
         private string[] _definitions;
 
@@ -130,9 +127,7 @@ namespace ClassicUO.Game.Scripting
         // Index used to organize traversal of arguments
         private int _index;
 
-        // Index used to organize traversal of optional arguments and the metainfo of each argument
-        private int _virtualIndex;
-
+        // Enumerates how the next arg should be read
         public enum Expectation
         {
             Mandatory,
@@ -144,16 +139,17 @@ namespace ClassicUO.Game.Scripting
             _args = args;
             _definitions = definitions;
             _index = -1;
-            _virtualIndex = -1;
         }
 
-        // Array like interface
+        // Array-like access interface
         public Argument this[int i]
         {
 
             get { _index = i; return _args[_index]; }
             set { _index = i; _args[_index] = value; }
         }
+
+        // Array-like size
         public int Length
         {
             get { return _args.Length; }
@@ -162,11 +158,18 @@ namespace ClassicUO.Game.Scripting
         // Generic method to read next argument in the list as the desired type T
         public T NextAs<T>(Expectation type = Expectation.Optional)
         {
+            var value = default(T);
             if (_args.Length > _index + 1) // Could we read one more argument?
-                return _args[++_index].As<T>(_definitions[++_virtualIndex]); // Yes, so read it as desired type (passinf default if possible)
-            else if (type == Expectation.Optional && _definitions.Length > _virtualIndex + 1) // Nop, but this is optional
-                return GetDefault<T>(_definitions[++_virtualIndex]);
+            {
+                value = _args[++_index].As<T>(); // Yes, so read it as desired type
+                GetMappedValue<T>(_definitions[_index], value, ref value); // apply any existing map based on arg-type
+            }
+            else if (type == Expectation.Optional && _definitions.Length > _index + 1) // Nop, but this is optional, so go with default
+                value = GetDefault<T>(_definitions[++_index]);
             else throw new ScriptRunTimeError(null, typeof(T).FullName + " argument does not exist at " + _index); // Otherwise.. kaboooom
+
+
+            return value;
         }
 
         // Retrieve an arguments that contains and array of elements
@@ -176,33 +179,69 @@ namespace ClassicUO.Game.Scripting
             if (_args.Length > _index + 1)
             {
                 // Read array of elements and convert them to desired array type
-                string arrayStr = _args[++_index].As<string>(_definitions[_index]);
+                string arrayStr = _args[++_index].As<string>();
                 string[] array = arrayStr.Replace(" ", "").Split(',');
                 if (array.Length > 1)
-                    return Array.ConvertAll(array, new Converter<string, T>(TypeConverter.To<T>));
+                {
+                    T[] value = new T[array.Length];
+                    for (int i = 0; i < array.Length; i++)
+                    {
+                        value[i] = TypeConverter.To<T>(array[i]); // convert string to given type
+                        GetMappedValue<T>(_definitions[_index], value[i], ref value[i]); // apply any existing map based on arg-type
+                    }
+                    return value;
+                }
                 else return new T[1] { TypeConverter.To<T>(array[0]) };
             }
             else if (type == Expectation.Optional)
-                return new T[] { default(T) };
-                //return new T[] { GetDefault<T>() }; // Return single element (Length == 1) for non existent optionals
+                return new T[] { GetDefault<T>() }; // Return single element (Length == 1) for non existent optionals
             else throw new ScriptRunTimeError(null, "List of " + typeof(T).FullName + " argument does not exist at " + _index);
         }  
 
         public T GetDefault<T>(string localAlias = "")
         {
-            T value = default(T);
-            if (value == null && typeof(T) == typeof(string))
+            T value = default(T); // native default for types
+
+            // indepentent of arg-type, default string should be empty ("") and not null
+            if (typeof(T) == typeof(string) && value == null)
                 value = (T)Convert.ChangeType(string.Empty, typeof(string));
 
+            // Defaults must respect mapped args
+            GetMappedValue<T>(localAlias, value, ref value);
+
             // Try to resolve it as a local alias (like a ushort set to 0, when a "color", should be ushort.MaxValue)
-            string content = (string)Convert.ChangeType(value, typeof(string));
-            if (localAlias == string.Empty || !Aliases.Read<T>(localAlias, content, ref value))
-            {
-                // Also try to resolve it as a global alias (like every uint as 'backpack' maps to the backpack serial)
-                Aliases.Read<T>(content, ref value);
-            }
+            //string content = (string)Convert.ChangeType(value, typeof(string));
+            //if (localAlias == string.Empty || !GetMappedValue<T>(localAlias, content, ref value))
+            //{
+            //    // Also try to resolve it as a global alias (like every uint as 'backpack' maps to the backpack serial)
+            //    Aliases.Read<T>(content, ref value);
+            //}
 
             return value;
         }
+
+        #region Argument mapping method to add/remove/get
+        public static bool GetMappedValue<T>(string argType, T argValue, ref T argDefault)
+        {
+            object obj = null;
+            if (_argMap.ContainsKey(argType) && _argMap[argType].ContainsKey(argValue) && _argMap[argType].TryGetValue(argValue, out obj))
+            {
+                argDefault = (T)obj;
+                return true;
+            }
+            else return false;
+        }
+        public static void AddMap<T>(string argType, T argValue, object argDefault)
+        {
+            if (!_argMap.ContainsKey(argType))
+                _argMap.Add(argType, new Dictionary<object, object>());
+            _argMap[argType].Add(argValue, argDefault);
+        }
+        public static void RemoveMap<T>(string argType, T argValue)
+        {
+            if (_argMap.ContainsKey(argType) && _argMap[argType].ContainsKey(argValue))
+                _argMap[argType].Remove(argValue);
+        }
+        #endregion
     }
 }

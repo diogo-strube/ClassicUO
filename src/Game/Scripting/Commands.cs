@@ -194,6 +194,20 @@ namespace ClassicUO.Game.Scripting
 
         public static void Register()
         {
+            // Moving the "local aliases" (aka scope/param aliases) to the ArgumentList class Defaults feature
+            // ATTENTION - this may be removed in the future if we noticed there is no common ground between the commands expected defaultas for each type (color, source, etc)
+            // Colors
+            ArgumentList.AddMap("color", "any", ushort.MaxValue);
+            ArgumentList.AddMap("color", (ushort)0, ushort.MaxValue);
+            // Source
+            ArgumentList.AddMap("source", "", "backpack");
+            // Directions
+            ArgumentList.AddMap("direction", "southeast", "down");
+            ArgumentList.AddMap("direction", "southwest", "left");
+            ArgumentList.AddMap("direction", "northeast", "right");
+            ArgumentList.AddMap("direction", "northwest", "up");
+
+            // Add definitions for all supported commands
             AddDefinition(new Command("findobject (serial) [color] [source] [amount] [range]", FindObject, WaitForMs(100), Command.Attributes.StateAction));    
             AddDefinition(new Command("attack (serial)", Attack, WaitForMs(500), Command.Attributes.SimpleInterAction));
             AddDefinition(new Command("walk (direction)", Walk, WaitForMovement));
