@@ -156,9 +156,10 @@ namespace ClassicUO.Game.Scripting
         // Execute the command according to queing rules and provided logic
         public bool Process(string command, Argument[] args, bool quiet, bool force)
         {
-            // Build execution and perform logic if queue should be bypassed
+            // Build execution
             var execution = CreateExecution(args, quiet, force);
-            if (force && (Attribute & Attributes.ForceBypassQueue) == Attributes.ForceBypassQueue)
+            if ((force && (Attribute & Attributes.ForceBypassQueue) == Attributes.ForceBypassQueue) || // perform logic now if queue should be bypassed
+                (Attribute & Attributes.ForceBypassQueue) == Attributes.ScriptAction)  // also perform logic now if action is script logic
                 return execution.Process();
             else Queues[Attribute].Enqueue(execution); // otherwise queue it
             return true;
