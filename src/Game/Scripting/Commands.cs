@@ -208,8 +208,12 @@ namespace ClassicUO.Game.Scripting
             ArgumentList.AddMap("direction", "northwest", "up");
 
             // Add definitions for all supported commands
-            AddDefinition(new Command("findobject (serial) [color] [source] [amount] [range]", FindObject, WaitForMs(100), Command.Attributes.StateAction));    
+            AddDefinition(new Command("setability ('primary'/'secondary'/'stun'/'disarm') ['on'/'off']", SetAbility, WaitForMs(500), Command.Attributes.StateAction));
             AddDefinition(new Command("attack (serial)", Attack, WaitForMs(500), Command.Attributes.SimpleInterAction));
+            AddDefinition(new Command("clearhands ('left'/'right'/'both')", ClearHands, WaitForMs(500), Command.Attributes.ComplexInterAction));
+            AddDefinition(new Command("clickobject (serial)", ClickObject, WaitForMs(500), Command.Attributes.SimpleInterAction));
+
+            AddDefinition(new Command("findobject (serial) [color] [source] [amount] [range]", FindObject, WaitForMs(100), Command.Attributes.StateAction));
             AddDefinition(new Command("walk (direction)", Walk, WaitForMovement));
             AddDefinition(new Command("poplist ('list name') ('element value'/'front'/'back')", PopList, WaitForMs(25)));
             AddDefinition(new Command("pushlist ('list name') ('element value') ['front'/'back']", PushList, WaitForMs(25)));
@@ -227,10 +231,7 @@ namespace ClassicUO.Game.Scripting
             //Interpreter.RegisterCommandHandler("findtype", FindType);
             //Interpreter.RegisterCommandHandler("fly", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("land", UnimplementedCommand);
-            //Interpreter.RegisterCommandHandler("setability", SetAbility);
-            //Interpreter.RegisterCommandHandler("attack", Attack);
-            //Interpreter.RegisterCommandHandler("clearhands", ClearHands);
-            //Interpreter.RegisterCommandHandler("clickobject", ClickObject);
+            
             //Interpreter.RegisterCommandHandler("bandageself", BandageSelf);
             //Interpreter.RegisterCommandHandler("usetype", UseType);
             //Interpreter.RegisterCommandHandler("useobject", UseObject);
@@ -371,6 +372,60 @@ namespace ClassicUO.Game.Scripting
             //Interpreter.RegisterCommandHandler("getfriend", UnimplementedCommand);
         }
 
+        private static bool SetAbility(CommandExecution execution)
+        {
+            var ability = execution.ArgList.NextAs<string>(ArgumentList.Expectation.Mandatory).ToLower();
+            var toggle = execution.ArgList.NextAs<string>(ArgumentList.Expectation.Mandatory).ToLower();
+            if (toggle == "on")
+            {
+                switch (ability)
+                {
+                    case "primary":
+                        GameActions.UsePrimaryAbility();
+                        break;
+                    case "secondary":
+                        GameActions.UseSecondaryAbility();
+                        break;
+                    case "stun":
+                        GameActions.RequestStun();
+                        break;
+                    case "disarm":
+                        GameActions.RequestDisarm();
+                        break;
+                }
+            }
+            else
+            {
+                GameActions.ClearAbility();
+            }
+            return true;
+        }
+        private static bool Attack(CommandExecution execution)
+        {
+            var serial = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
+            GameActions.Attack(serial);
+            return true;
+        }
+
+        private static bool ClearHands(CommandExecution execution)
+        {
+            var hand = execution.ArgList.NextAs<string>(ArgumentList.Expectation.Mandatory).ToLower();
+            if (hand == "both")
+            {
+                GameActions.ClearEquipped(IO.ItemExt_PaperdollAppearance.Left);
+                GameActions.ClearEquipped(IO.ItemExt_PaperdollAppearance.Right);
+            }
+            else GameActions.ClearEquipped((IO.ItemExt_PaperdollAppearance)Enum.Parse(typeof(Direction), hand, true));
+            return true;
+        }
+
+        private static bool ClickObject(CommandExecution execution)
+        {
+            var serial = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
+            GameActions.SingleClick(serial);
+            return true;
+        }
+
         public static bool FindObject(CommandExecution execution)
         {
             var serial = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
@@ -387,13 +442,6 @@ namespace ClassicUO.Game.Scripting
                 return true;
             }
             else return false;
-        }
-
-        private static bool Attack(CommandExecution execution)
-        {
-            var serial = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
-            GameActions.Attack(serial);
-            return true;
         }
 
         private static bool PopList(CommandExecution execution)
@@ -505,77 +553,7 @@ namespace ClassicUO.Game.Scripting
             return true;
         }
 
-        //private static bool SetAbility(string command, ParameterList args)
-        //{
-        //    try
-        //    {
-        //        var ability = args.NextAs<string>(ParameterList.ArgumentType.Mandatory);
-        //        var toggle = args.NextAs<string>(ParameterList.ArgumentType.Mandatory);
-        //        if (toggle == "on")
-        //        {
-        //            switch (ability)
-        //            {
-        //                case "primary":
-        //                    GameActions.UsePrimaryAbility();
-        //                    break;
-        //                case "secondary":
-        //                    GameActions.UseSecondaryAbility();
-        //                    break;
-        //                case "stun":
-        //                    GameActions.RequestStun();
-        //                    break;
-        //                case "disarm":
-        //                    GameActions.RequestDisarm();
-        //                    break;
-        //            }
-        //        }
-        //        else
-        //        {
-        //            GameActions.ClearAbility();
-        //        }
-        //        return true;
-        //    }
-        //    catch (ScriptRunTimeError ex)
-        //    {
-        //        throw new ScriptSyntaxError("Usage: setability ('primary'/'secondary'/'stun'/'disarm') ['on'/'off']", ex);
-        //    }
-        //}
-
-
-
-        //private static bool ClearHands(string command, ParameterList args)
-        //{
-        //    try
-        //    {
-        //        var hands = args.NextAsHand(ParameterList.ArgumentType.Mandatory);
-        //        if (hands == ParameterList.Hands.Both)
-        //        {
-        //            GameActions.ClearEquipped((IO.ItemExt_PaperdollAppearance)ParameterList.Hands.Left);
-        //            GameActions.ClearEquipped((IO.ItemExt_PaperdollAppearance)ParameterList.Hands.Right);
-        //        }
-        //        else GameActions.ClearEquipped((IO.ItemExt_PaperdollAppearance)hands);
-        //        // TODO: check if hands are cleared to return false on fail (can you fail to clear hands? Maybe trying to unequipe during use of wand, or cast of spell?)
-        //        return true;
-        //    }
-        //    catch (ScriptRunTimeError ex)
-        //    {
-        //        throw new ScriptSyntaxError("Usage: clearhands ('left'/'right'/'both')", ex);
-        //    }
-        //}
-
-        //private static bool ClickObject(string command, ParameterList args)
-        //{
-        //    try
-        //    {
-        //        var serial = args.NextAsSerial(ParameterList.ArgumentType.Mandatory);
-        //        GameActions.SingleClick(serial);
-        //        return true;
-        //    }
-        //    catch (ScriptRunTimeError ex)
-        //    {
-        //        throw new ScriptSyntaxError("Usage: clickobject (serial)", ex);
-        //    }
-        //}
+        
 
         //private static bool BandageSelf(string command, ParameterList args)
         //{
