@@ -40,7 +40,7 @@ namespace ClassicUO.Game.Scripting
             if (_node.Type == ASTNodeType.SERIAL)
             {
                 T value = default(T);
-                if (Aliases.Read<T>(_node.Lexeme, ref value))
+                if (Aliases.Read<T>(_node.Lexeme.ToLower(), ref value))
                     return value;
             }
 
@@ -100,7 +100,7 @@ namespace ClassicUO.Game.Scripting
             if (_type == ASTNodeType.SERIAL)
             {
                 T value = default(T);
-                if (Aliases.Read<T>(_node.Lexeme, ref value))
+                if (Aliases.Read<T>(_node.Lexeme.ToLower(), ref value))
                     return value;
             }
 
@@ -177,7 +177,6 @@ namespace ClassicUO.Game.Scripting
                 value = GetDefault<T>(_definitions[++_index]);
             else throw new ScriptRunTimeError(null, typeof(T).FullName + " argument does not exist at " + _index); // Otherwise.. kaboooom
 
-
             return value;
         }
 
@@ -211,10 +210,6 @@ namespace ClassicUO.Game.Scripting
         {
             T value = default(T); // native default for types
 
-            // indepentent of arg-type, default string should be empty ("") and not null
-            if (typeof(T) == typeof(string) && value == null)
-                value = (T)Convert.ChangeType(string.Empty, typeof(string));
-
             // Defaults must respect mapped args
             GetMappedValue<T>(localAlias, value, ref value);
 
@@ -222,11 +217,16 @@ namespace ClassicUO.Game.Scripting
         }
 
         #region Argument mapping method to add/remove/get
-        public static bool GetMappedValue<T>(string argType, T argValue, ref T argDefault)
+        private static bool GetMappedValue<T>(string argType, T argValue, ref T argDefault)
         {
             // if a string, make sure null is empty
-            if (typeof(T) == typeof(string) && argValue == null)
-                argValue = (T)Convert.ChangeType(string.Empty, typeof(string));
+            if (typeof(T) == typeof(string))
+            {
+                if(argValue == null)
+                    argValue = (T)Convert.ChangeType(string.Empty, typeof(string));
+                else
+                    argValue = (T)Convert.ChangeType(argValue.ToString().ToLower(), typeof(string));
+            }            
 
             // check if in map and update value accordingly
             object obj = null;
