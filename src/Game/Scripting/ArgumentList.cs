@@ -26,7 +26,7 @@ namespace ClassicUO.Game.Scripting
         }
 
         // Generic method to interpreter an argument as the desired type T
-        public virtual T As<T>(/*string localAlias = ""*/)
+        public virtual T As<T>()
         {
             if (_node.Lexeme == null)
                 throw new ScriptRunTimeError(_node, "Cannot convert argument to " + typeof(T).FullName);
@@ -94,7 +94,7 @@ namespace ClassicUO.Game.Scripting
         }
 
         // Generic method to interpreter an argument as the desired type T
-        public override T As<T>(/*string localAlias = ""*/)
+        public override T As<T>()
         {
             // Try to resolve it as a global alias (only if Serial)
             if (_type == ASTNodeType.SERIAL)
@@ -161,8 +161,17 @@ namespace ClassicUO.Game.Scripting
             var value = default(T);
             if (_args.Length > _index + 1) // Could we read one more argument?
             {
-                value = _args[++_index].As<T>(); // Yes, so read it as desired type
-                GetMappedValue<T>(_definitions[_index], value, ref value); // apply any existing map based on arg-type
+                // if anything other than a string, check mapped values first (as for example a ushort Color can be "any")
+                if (typeof(T) != typeof(string))
+                {
+                    if (!GetMappedValue<T>(_definitions[++_index], value, ref value))
+                        value = _args[_index].As<T>(); // After map is checked read argument as usual
+                }
+                else
+                {   // otherwise read argument and later check value in map
+                    value = _args[++_index].As<T>();
+                    GetMappedValue<T>(_definitions[_index], value, ref value);
+                } 
             }
             else if (type == Expectation.Optional && _definitions.Length > _index + 1) // Nop, but this is optional, so go with default
                 value = GetDefault<T>(_definitions[++_index]);
@@ -209,20 +218,17 @@ namespace ClassicUO.Game.Scripting
             // Defaults must respect mapped args
             GetMappedValue<T>(localAlias, value, ref value);
 
-            // Try to resolve it as a local alias (like a ushort set to 0, when a "color", should be ushort.MaxValue)
-            //string content = (string)Convert.ChangeType(value, typeof(string));
-            //if (localAlias == string.Empty || !GetMappedValue<T>(localAlias, content, ref value))
-            //{
-            //    // Also try to resolve it as a global alias (like every uint as 'backpack' maps to the backpack serial)
-            //    Aliases.Read<T>(content, ref value);
-            //}
-
             return value;
         }
 
         #region Argument mapping method to add/remove/get
         public static bool GetMappedValue<T>(string argType, T argValue, ref T argDefault)
         {
+            // if a string, make sure null is empty
+            if (typeof(T) == typeof(string) && argValue == null)
+                argValue = (T)Convert.ChangeType(string.Empty, typeof(string));
+
+            // check if in map and update value accordingly
             object obj = null;
             if (_argMap.ContainsKey(argType) && _argMap[argType].ContainsKey(argValue) && _argMap[argType].TryGetValue(argValue, out obj))
             {
