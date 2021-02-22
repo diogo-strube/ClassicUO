@@ -13,7 +13,7 @@ namespace ClassicUO.Game.Scripting
             // Preregistered System Aliases
             Write<uint>("backpack", GetLayerSerial(Data.Layer.Backpack));
             Write<uint>("bank", GetLayerSerial(Data.Layer.Bank));
-            Write<uint>("mount", GetLayerSerial(Data.Layer.Mount));
+            Write<uint>("mount", Mount);
             Write<uint>("lefthand", GetHandSerial(IO.ItemExt_PaperdollAppearance.Left));
             Write<uint>("righthand", GetHandSerial(IO.ItemExt_PaperdollAppearance.Right));
 
@@ -65,6 +65,29 @@ namespace ClassicUO.Game.Scripting
         {
             if (_globalHandlers.ContainsKey(typeof(T)))
                 _globalHandlers[typeof(T)].Remove(keyword);
+        }
+
+        private static bool Mount(string alias, out uint value)
+        {
+            value = 0;
+            // If player is mounted we retrieve the mount serial by Layer
+            if (World.Player.IsMounted) 
+            {
+                var handler = GetLayerSerial(Data.Layer.Mount);
+                if (handler("mount", out value))
+                {
+                    // If save the mount serial by value (not delegate) as well so it can be retrieved when unmounted
+                    Write<uint>("mount", value);
+                    return true;
+                }
+            }
+            else if (_global.ContainsKey(typeof(uint)) && _global[typeof(uint)].TryGetValue(alias, out object aliasObj))
+            {
+                // Try retrieving serial by value (in case  player already unmounted or this was set via prompt/setalias)
+                value = (uint)aliasObj;
+                return true;
+            }    
+            return false;
         }
 
         // Get the Serial for the desired layer (using "curry" technique for param reduction)

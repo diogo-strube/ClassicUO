@@ -232,8 +232,7 @@ namespace ClassicUO.Game.Scripting
             AddDefinition(new Command("moveitem (serial) (destination) [(x, y, z)] [amount]", MoveItem, WaitForMs(500), Command.Attributes.ComplexInterAction));
             AddDefinition(new Command("moveitemoffset (serial) 'ground' [(x, y, z)] [amount]", MoveItemOffset, WaitForMs(500), Command.Attributes.ComplexInterAction));
             AddDefinition(new Command("movetype (graphic) (source) (destination) [(x, y, z)] [color] [amount] [range or search level]", MoveType, WaitForMs(500), Command.Attributes.ComplexInterAction));
-            AddDefinition(new Command("movetypeoffset (graphic) (source) 'ground' [(x, y, z)] [color] [amount] [range or search level]", MoveTypeOffset, WaitForMs(500), Command.Attributes.ComplexInterAction));
-            
+            AddDefinition(new Command("movetypeoffset (graphic) (source) 'ground' [(x, y, z)] [color] [amount] [range or search level]", MoveTypeOffset, WaitForMs(500), Command.Attributes.ComplexInterAction));        
             AddDefinition(new Command("walk (direction)", MovementLogic(false), WaitForMovement, Command.Attributes.PlayerAction));
             AddDefinition(new Command("turn (direction)", MovementLogic(false), WaitForMovement, Command.Attributes.PlayerAction));
             AddDefinition(new Command("run (direction)", MovementLogic(true), WaitForMovement, Command.Attributes.PlayerAction));
@@ -243,6 +242,7 @@ namespace ClassicUO.Game.Scripting
             AddDefinition(new Command("shownames ['mobiles'/'corpses']", ShowNames, WaitForMs(200), Command.Attributes.SimpleInterAction));
             AddDefinition(new Command("togglehands ('left'/'right')", ToggleHands, WaitForMs(500), Command.Attributes.ComplexInterAction));
             AddDefinition(new Command("equipitem (serial) (layer)", EquipItem, WaitForMs(500), Command.Attributes.ComplexInterAction));
+            AddDefinition(new Command("togglemounted", ToggleMounted, WaitForMs(500), Command.Attributes.ComplexInterAction));
 
             AddDefinition(new Command("findtype (graphic) [color] [source] [amount] [range or search level]", BandageSelf, WaitForMs(500), Command.Attributes.SimpleInterAction));
             AddDefinition(new Command("findobject (serial) [color] [source] [amount] [range]", FindObject, WaitForMs(100), Command.Attributes.StateAction));
@@ -254,7 +254,7 @@ namespace ClassicUO.Game.Scripting
             AddDefinition(new Command("msg ('text') [color]", Msg, WaitForMs(25)));
             AddDefinition(new Command("setalias ('alias name') [serial]", SetAlias, WaitForMs(25)));
             AddDefinition(new Command("unsetalias ('alias name')", UnsetAlias, WaitForMs(25)));
-            AddDefinition(new Command("promptalias ('alias name')", PromptAlias, WaitForMs(25)));
+            AddDefinition(new Command("promptalias ('alias name')", PromptAlias, WaitForMs(25), Command.Attributes.ComplexInterAction));
 
 
             ////Interpreter.RegisterCommandHandler("poplist", );
@@ -683,6 +683,25 @@ namespace ClassicUO.Game.Scripting
             return true;
         }
 
+        public static bool ToggleMounted(CommandExecution execution)
+        {
+            uint serial = 0;
+
+            // If player is mounted we just double ckick ourselves to execute a dismount
+            if (World.Player.IsMounted)
+                serial = World.Player.Serial;
+            else if (!Aliases.Read<uint>("mount", ref serial) || serial == 0) // Otherwise we go after the mount serial
+            {
+                // UOStream - behavior is prompting for mount if not found and requiring command to eb called again for mount to occur
+                VirtualArgument promptArg = new VirtualArgument("mount");
+                ArgumentList promptParams = new ArgumentList(new Argument[1] { promptArg }, Definitions["promptalias"].ArgTypes);
+                Command.Queues[execution.Cmd.Attribute].Enqueue((new CommandExecution(Definitions["promptalias"], promptParams, execution.Quiet, execution.Force)));
+            }
+
+            GameActions.DoubleClick(serial);
+            return true;
+        }
+
         public static bool FindObject(CommandExecution execution)
         {
             Entity entity = CmdFindEntityBySerial(
@@ -825,7 +844,7 @@ namespace ClassicUO.Game.Scripting
                 var currentTarget = TargetManager.LastTargetInfo.Serial;
                 DateTime targetingStarted = DateTime.UtcNow;
                 TargetManager.SetTargeting(CursorTarget.Object, 0, TargetType.Neutral);
-                while (TargetManager.LastTargetInfo.Serial == currentTarget && DateTime.UtcNow - targetingStarted < TimeSpan.FromSeconds(50))
+                while (TargetManager.IsTargeting && DateTime.UtcNow - targetingStarted < TimeSpan.FromSeconds(50))
                 {
                     Thread.Sleep(25);
                 }
