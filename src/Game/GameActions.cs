@@ -697,6 +697,11 @@ namespace ClassicUO.Game
 
         public static void Equip(uint container = 0)
         {
+            Equip((Layer)ItemHold.ItemData.Layer, container);
+        }
+
+        public static void Equip(Layer layer, uint container = 0)
+        {
             if (ItemHold.Enabled && !ItemHold.IsFixedPosition && ItemHold.ItemData.IsWearable)
             {
                 if (!SerialHelper.IsValid(container))
@@ -704,7 +709,7 @@ namespace ClassicUO.Game
                     container = World.Player.Serial;
                 }
 
-                Socket.Send(new PEquipRequest(ItemHold.Serial, (Layer) ItemHold.ItemData.Layer, container));
+                Socket.Send(new PEquipRequest(ItemHold.Serial, layer, container));
 
                 ItemHold.Enabled = false;
                 ItemHold.Dropped = true;

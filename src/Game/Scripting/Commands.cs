@@ -24,6 +24,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Sockets;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -32,6 +33,7 @@ using ClassicUO.Game.Data;
 using ClassicUO.Game.GameObjects;
 using ClassicUO.Game.Managers;
 using ClassicUO.Game.Scenes;
+using ClassicUO.Network;
 
 namespace ClassicUO.Game.Scripting
 {
@@ -237,6 +239,10 @@ namespace ClassicUO.Game.Scripting
             AddDefinition(new Command("run (direction)", MovementLogic(true), WaitForMovement, Command.Attributes.PlayerAction));
             AddDefinition(new Command("useskill ('skill name'/'last')", UseSkill, WaitForMs(500), Command.Attributes.SimpleInterAction));
             AddDefinition(new Command("feed (serial) ('food name'/'food group'/'any'/graphic) [color] [amount]", Feed, WaitForMs(500), Command.Attributes.ComplexInterAction));
+            AddDefinition(new Command("rename (serial) ('name')", Rename, WaitForMs(500), Command.Attributes.ComplexInterAction));
+            AddDefinition(new Command("shownames ['mobiles'/'corpses']", ShowNames, WaitForMs(200), Command.Attributes.SimpleInterAction));
+            AddDefinition(new Command("togglehands ('left'/'right')", ToggleHands, WaitForMs(500), Command.Attributes.ComplexInterAction));
+            AddDefinition(new Command("equipitem (serial) (layer)", EquipItem, WaitForMs(500), Command.Attributes.ComplexInterAction));
 
             AddDefinition(new Command("findtype (graphic) [color] [source] [amount] [range or search level]", BandageSelf, WaitForMs(500), Command.Attributes.SimpleInterAction));
             AddDefinition(new Command("findobject (serial) [color] [source] [amount] [range]", FindObject, WaitForMs(100), Command.Attributes.StateAction));
@@ -290,7 +296,6 @@ namespace ClassicUO.Game.Scripting
 
 
 
-            //Interpreter.RegisterCommandHandler("rename", Rename);
             //Interpreter.RegisterCommandHandler("shownames", ShowNames);
             //Interpreter.RegisterCommandHandler("togglehands", ToggleHands);
             //Interpreter.RegisterCommandHandler("equipitem", EquipItem);
@@ -584,6 +589,29 @@ namespace ClassicUO.Game.Scripting
             return true;
         }
 
+        public static Command.Handler MovementLogic(bool forceRun = false)
+        {
+            return (execution) => {
+                // Be prepared for multiple directions -> walk "North, East, East, West, South, Southeast"
+                var dirArray = execution.ArgList.NextAsArray<string>(ArgumentList.Expectation.Mandatory);
+
+                // At least one is mandatory, so perform walk command on it
+                var direction = (Direction)Enum.Parse(typeof(Direction), dirArray[0], true);
+                World.Player.Walk(direction, forceRun || ProfileManager.CurrentProfile.AlwaysRun);
+
+                // For all remaining, explode it as one command per single direction
+                for (int i = 1; i < dirArray.Length; i++)
+                {
+                    // So queue it again with one less arg in the list
+                    VirtualArgument arg = new VirtualArgument(dirArray[i]);
+                    ArgumentList newParams = new ArgumentList(new Argument[1] { arg }, execution.Cmd.ArgTypes);
+                    Command.Queues[execution.Cmd.Attribute].Enqueue(new CommandExecution(execution.Cmd, newParams, execution.Quiet, execution.Force));
+                }
+
+                return true;
+            };
+        }
+
         private static bool UseSkill(CommandExecution execution)
         {
             var skill = execution.ArgList.NextAs<string>(ArgumentList.Expectation.Mandatory);
@@ -618,6 +646,41 @@ namespace ClassicUO.Game.Scripting
             {
                 throw new ScriptSyntaxError("Usage: feed (serial) ('food name'/'food group'/'any'/graphic) [color] [amount]", ex);
             }
+        }
+
+        private static bool Rename(CommandExecution execution)
+        {
+            GameActions.Rename(
+                execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory),
+                execution.ArgList.NextAs<string>());
+            return true;
+        }
+
+        private static bool ShowNames(CommandExecution execution)
+        {
+            var names = execution.ArgList.NextAs<string>();
+            if (names == string.Empty)
+                names = "all";
+
+            var target = (GameActions.AllNamesTargets)Enum.Parse(typeof(GameActions.AllNamesTargets), names, true);
+            GameActions.AllNames(target);
+            return true;
+        }
+
+        public static bool ToggleHands(CommandExecution execution)
+        {
+            var hand = execution.ArgList.NextAs<string>(ArgumentList.Expectation.Mandatory).ToLower();
+            GameActions.ClearEquipped((IO.ItemExt_PaperdollAppearance)Enum.Parse(typeof(Direction), hand, true));
+            return true;
+        }
+
+        public static bool EquipItem(CommandExecution execution)
+        {
+            var item = World.GetOrCreateItem(execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory));
+            GameActions.PickUp(item, 0, 0, 1);
+            // We could make the layer parameter optimal, allowing us to just call GameActions.Equip (but this would be different from UO Steam)
+            GameActions.Equip((Layer)execution.ArgList.NextAs<int>(ArgumentList.Expectation.Mandatory));
+            return true;
         }
 
         public static bool FindObject(CommandExecution execution)
@@ -834,29 +897,6 @@ namespace ClassicUO.Game.Scripting
 
 
 
-
-
-
-
-
-
-        //private static bool Rename(string command, ParameterList args)
-        //{
-        //    if (args.Length != 2)
-        //    {
-        //        throw new ScriptRunTimeError(null, "Usage: rename (serial) ('name')");
-        //    }
-
-        //    var target = args[0].As<uint>();
-        //    var name = args[1].As<string>();
-
-        //    GameActions.Rename(target, name);
-
-        //    return true;
-        //}
-
-
-
         ////private static bool PromptAlias(string command, ParameterList args)
         ////{
         ////    Interpreter.Pause(60000);
@@ -920,61 +960,6 @@ namespace ClassicUO.Game.Scripting
 
         ////    return true;
         ////}
-
-        //private static bool ShowNames(string command, ParameterList args)
-        //{
-        //    if (args.Length == 0)
-        //        throw new ScriptRunTimeError(null, "Usage: shownames ['mobiles'/'corpses']");
-
-        //    if (args[0].As<string>() == "mobiles")
-        //    {
-        //        GameActions.AllNames(GameActions.AllNamesTargets.Mobiles);
-        //    }
-        //    else if (args[0].As<string>() == "corpses")
-        //    {
-        //        GameActions.AllNames(GameActions.AllNamesTargets.Corpses);
-        //    }
-        //    return true;
-        //}
-
-        //public static bool ToggleHands(string command, ParameterList args)
-        //{
-        //    if (args.Length == 0)
-        //    {
-        //        throw new ScriptRunTimeError(null, "Usage: togglehands ('left'/'right')");
-        //    }
-
-        //    switch (args[0].As<string>())
-        //    {
-        //        case "left":
-        //            GameActions.ToggleEquip(IO.ItemExt_PaperdollAppearance.Left);
-        //            break;
-        //        case "right":
-        //            GameActions.ToggleEquip(IO.ItemExt_PaperdollAppearance.Right);
-        //            break;
-        //        default:
-        //            throw new ScriptRunTimeError(null, "Usage: togglehands ('left'/'right')");
-        //    }
-
-        //    return true;
-        //}
-
-        //public static bool EquipItem(string command, ParameterList args)
-        //{
-        //    if (args.Length < 1)
-        //    {
-        //        throw new ScriptRunTimeError(null, "Usage: equipitem (serial)");
-        //    }
-
-        //    var item = (Item)World.Get(args[0].As<uint>());
-
-        //    if (item != null)
-        //    {
-        //        GameActions.Equip(item);
-        //    }
-
-        //    return true;
-        //}
 
         ////public static bool ToggleScavenger(string command, ParameterList args)
         ////{
@@ -1476,29 +1461,6 @@ namespace ClassicUO.Game.Scripting
             if (item != null && item.Amount < amount)
                 return null;
             else return item;
-        }
-
-        public static Command.Handler MovementLogic(bool forceRun = false)
-        {
-            return (execution) => {
-                // Be prepared for multiple directions -> walk "North, East, East, West, South, Southeast"
-                var dirArray = execution.ArgList.NextAsArray<string>(ArgumentList.Expectation.Mandatory);
-
-                // At least one is mandatory, so perform walk command on it
-                var direction = (Direction)Enum.Parse(typeof(Direction), dirArray[0], true);
-                World.Player.Walk(direction, forceRun || ProfileManager.CurrentProfile.AlwaysRun);
-
-                // For all remaining, explode it as one command per single direction
-                for (int i = 1; i < dirArray.Length; i++)
-                {
-                    // So queue it again with one less arg in the list
-                    VirtualArgument arg = new VirtualArgument(dirArray[i]);
-                    ArgumentList newParams = new ArgumentList(new Argument[1] { arg }, execution.Cmd.ArgTypes);
-                    Command.Queues[execution.Cmd.Attribute].Enqueue(new CommandExecution(execution.Cmd, newParams, execution.Quiet, execution.Force));
-                }
-
-                return true;
-            };
         }
 
         // Wait for a given amount of milliseconds (using "curry" technique for param reduction)
