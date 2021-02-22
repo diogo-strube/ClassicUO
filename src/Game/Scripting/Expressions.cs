@@ -40,8 +40,17 @@ namespace ClassicUO.Game.Scripting
 
         public static bool ExpressionToCommand(string expression, Argument[] args, bool quiet, bool force)
         {
-            var execution = Commands.Definitions[expression].CreateExecution(args, quiet, force);
-            return execution.Process();
+            try
+            {
+                var execution = Commands.Definitions[expression].CreateExecution(args, quiet, force);
+                return execution.Process();
+            }
+            catch (Exception ex)
+            {
+                if (quiet)  // We dont raise script related problems when quiet
+                    return false;
+                else throw ex;
+            }
         }
     }
 }

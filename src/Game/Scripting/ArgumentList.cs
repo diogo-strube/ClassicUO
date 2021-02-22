@@ -37,12 +37,12 @@ namespace ClassicUO.Game.Scripting
                 return arg.As<T>();
 
             // 2 - Try to resolve it as a global alias (only if Serial)
-            if (_node.Type == ASTNodeType.SERIAL)
-            {
+            //if (_node.Type == ASTNodeType.SERIAL)
+            //{
                 T value = default(T);
                 if (Aliases.Read<T>(_node.Lexeme.ToLower(), ref value))
                     return value;
-            }
+            //}
 
             // 3 - If neither a scope variable or an alias, convert type based on Lexeme
             if(typeof(T) == typeof(string))
@@ -97,12 +97,14 @@ namespace ClassicUO.Game.Scripting
         public override T As<T>()
         {
             // Try to resolve it as a global alias (only if Serial)
-            if (_type == ASTNodeType.SERIAL)
-            {
-                T value = default(T);
-                if (Aliases.Read<T>(_node.Lexeme.ToLower(), ref value))
+            //if (_type == ASTNodeType.SERIAL)
+            //{
+            T value = default(T);
+            if (typeof(T) == typeof(string) && value == null)
+                value = (T)Convert.ChangeType(string.Empty, typeof(string));
+            if (Aliases.Read<T>(_value, ref value))
                     return value;
-            }
+            //}
 
             // If neither a scope variable or an alias, convert type based on stored value
             if (typeof(T) == typeof(string))
@@ -208,9 +210,13 @@ namespace ClassicUO.Game.Scripting
 
         public T GetDefault<T>(string localAlias = "")
         {
-            T value = default(T); // native default for types
+            T value = default(T); // start with native default for types
 
-            // Defaults must respect mapped args
+            // but specilize as needed
+            if (typeof(T) == typeof(int) && localAlias == "range")
+                value = (T)Convert.ChangeType(int.MaxValue, typeof(int));
+
+            // Than check mapped args
             GetMappedValue<T>(localAlias, value, ref value);
 
             return value;

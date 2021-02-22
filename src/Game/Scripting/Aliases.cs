@@ -10,8 +10,15 @@ namespace ClassicUO.Game.Scripting
         // Called by upper management class to register all the desired aliases
         public static void Register()
         {
-            // Player commons
-            Write<uint>("mount", Mount);
+            // Preregistered System Aliases
+            Write<uint>("backpack", GetLayerSerial(Data.Layer.Backpack));
+            Write<uint>("bank", GetLayerSerial(Data.Layer.Bank));
+            Write<uint>("mount", GetLayerSerial(Data.Layer.Mount));
+            Write<uint>("lefthand", GetHandSerial(IO.ItemExt_PaperdollAppearance.Left));
+            Write<uint>("righthand", GetHandSerial(IO.ItemExt_PaperdollAppearance.Right));
+
+            // Destination Aliases
+            Write<uint>("ground", Ground);
         }
 
         // Registry of global aliases mapping a name to a value
@@ -36,6 +43,7 @@ namespace ClassicUO.Game.Scripting
         }
         public static void Write<T>(string alias, T value)
         {
+            GameActions.Print("Object updated '" + alias + "' (" + value.ToString() + ")");
             if (!_global.ContainsKey(typeof(T)))
                 _global.Add(typeof(T), new Dictionary<string, object>());
             if (!_global[typeof(T)].ContainsKey(alias))
@@ -59,16 +67,37 @@ namespace ClassicUO.Game.Scripting
                 _globalHandlers[typeof(T)].Remove(keyword);
         }
 
-        private static bool Mount(string alias, out uint value)
+        // Get the Serial for the desired layer (using "curry" technique for param reduction)
+        private static AliasHandler<uint> GetLayerSerial(Data.Layer layer)
         {
-            var mount = World.Player.FindItemByLayer(Data.Layer.Mount);
-            value = mount.Serial;
-            return (mount != null);
+            return (string alias, out uint value) => {
+                var item = World.Player.FindItemByLayer(layer);
+                if(item != null)
+                    value = item.Serial;
+                else
+                    value = 0;
+                return true; // we always return true, as finding no item in hand does not mean alias was not found
+            };
         }
-        private static bool Self(string alias, out uint value)
+
+        // Get the Serial for the item being hold ina  given hand (using "curry" technique for param reduction)
+        private static AliasHandler<uint> GetHandSerial(IO.ItemExt_PaperdollAppearance hand)
         {
-            value = World.Player.Serial;
-            return (value != 0);
+            return (string alias, out uint value) => {
+                var item = World.Player.FindItemByHand(hand);
+                if (item != null)
+                    value = item.Serial;
+                else
+                    value = 0;
+                return true; // we always return true, as finding no item in hand does not mean alias was not found
+            };
+           
+        }
+
+        private static bool Ground(string alias, out uint value)
+        {
+            value = uint.MaxValue; // Ground is MaxValue and Any is Zero
+            return true;
         }
     }
 }

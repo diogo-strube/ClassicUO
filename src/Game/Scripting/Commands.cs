@@ -25,10 +25,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 using ClassicUO.Configuration;
 using ClassicUO.Game.Data;
 using ClassicUO.Game.GameObjects;
 using ClassicUO.Game.Managers;
+using ClassicUO.Game.Scenes;
 
 namespace ClassicUO.Game.Scripting
 {
@@ -205,7 +208,10 @@ namespace ClassicUO.Game.Scripting
             ArgumentList.AddMap("color", "any", ushort.MaxValue);
             ArgumentList.AddMap("color", (ushort)0, ushort.MaxValue);
             // Source
-            ArgumentList.AddMap("source", "", "backpack");
+            //ArgumentList.AddMap("source", "", "backpack");
+            // Destination
+            //ArgumentList.AddMap("destination", "ground", uint.MaxValue);
+            //ArgumentList.AddMap("destination", (uint)0, uint.MaxValue);
             // Directions
             ArgumentList.AddMap("direction", "southeast", "down");
             ArgumentList.AddMap("direction", "southwest", "left");
@@ -221,13 +227,16 @@ namespace ClassicUO.Game.Scripting
             AddDefinition(new Command("usetype (graphic) [color] [source] [range or search level]", UseType, WaitForMs(500), Command.Attributes.SimpleInterAction));
             AddDefinition(new Command("useobject (serial)", UseObject, WaitForMs(500), Command.Attributes.SimpleInterAction));
             AddDefinition(new Command("useonce (graphic) [color]", UseOnce, WaitForMs(500), Command.Attributes.SimpleInterAction));
-            //moveitem (serial) (destination) [(x, y, z)] [amount]
-            //moveitemoffset(serial) 'ground'[(x, y, z)][amount]
-            //movetype(graphic)(source)(destination)[(x, y, z)][color][amount][range or search level]
-            //movetypeoffset(graphic)(source) 'ground'[(x, y, z)][color][amount][range or search level]
-            AddDefinition(new Command("walk (direction)", MovementLogic(false), WaitForMovement));
-            AddDefinition(new Command("turn (direction)", MovementLogic(false), WaitForMovement));
-            AddDefinition(new Command("run (direction)", MovementLogic(true), WaitForMovement));
+            AddDefinition(new Command("moveitem (serial) (destination) [(x, y, z)] [amount]", MoveItem, WaitForMs(500), Command.Attributes.ComplexInterAction));
+            AddDefinition(new Command("moveitemoffset (serial) 'ground' [(x, y, z)] [amount]", MoveItemOffset, WaitForMs(500), Command.Attributes.ComplexInterAction));
+            AddDefinition(new Command("movetype (graphic) (source) (destination) [(x, y, z)] [color] [amount] [range or search level]", MoveType, WaitForMs(500), Command.Attributes.ComplexInterAction));
+            AddDefinition(new Command("movetypeoffset (graphic) (source) 'ground' [(x, y, z)] [color] [amount] [range or search level]", MoveTypeOffset, WaitForMs(500), Command.Attributes.ComplexInterAction));
+            
+            AddDefinition(new Command("walk (direction)", MovementLogic(false), WaitForMovement, Command.Attributes.PlayerAction));
+            AddDefinition(new Command("turn (direction)", MovementLogic(false), WaitForMovement, Command.Attributes.PlayerAction));
+            AddDefinition(new Command("run (direction)", MovementLogic(true), WaitForMovement, Command.Attributes.PlayerAction));
+            AddDefinition(new Command("useskill ('skill name'/'last')", UseSkill, WaitForMs(500), Command.Attributes.SimpleInterAction));
+            AddDefinition(new Command("feed (serial) ('food name'/'food group'/'any'/graphic) [color] [amount]", Feed, WaitForMs(500), Command.Attributes.ComplexInterAction));
 
             AddDefinition(new Command("findtype (graphic) [color] [source] [amount] [range or search level]", BandageSelf, WaitForMs(500), Command.Attributes.SimpleInterAction));
             AddDefinition(new Command("findobject (serial) [color] [source] [amount] [range]", FindObject, WaitForMs(100), Command.Attributes.StateAction));
@@ -239,6 +248,8 @@ namespace ClassicUO.Game.Scripting
             AddDefinition(new Command("msg ('text') [color]", Msg, WaitForMs(25)));
             AddDefinition(new Command("setalias ('alias name') [serial]", SetAlias, WaitForMs(25)));
             AddDefinition(new Command("unsetalias ('alias name')", UnsetAlias, WaitForMs(25)));
+            AddDefinition(new Command("promptalias ('alias name')", PromptAlias, WaitForMs(25)));
+
 
             ////Interpreter.RegisterCommandHandler("poplist", );
             //Interpreter.RegisterCommandHandler("pushlist", );
@@ -248,14 +259,9 @@ namespace ClassicUO.Game.Scripting
             //Interpreter.RegisterCommandHandler("findtype", FindType);
             //Interpreter.RegisterCommandHandler("fly", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("land", UnimplementedCommand);
-            
+
             //Interpreter.RegisterCommandHandler("useobject", UseObject);
             //Interpreter.RegisterCommandHandler("moveitem", MoveItem);
-            //Interpreter.RegisterCommandHandler("walk", Walk);
-            //Interpreter.RegisterCommandHandler("run", Run);
-            //Interpreter.RegisterCommandHandler("turn", Turn);
-            //Interpreter.RegisterCommandHandler("useskill", UseSkill);
-            //Interpreter.RegisterCommandHandler("feed", Feed);
 
 
 
@@ -452,7 +458,7 @@ namespace ClassicUO.Game.Scripting
             Item item = CmdFindItemByGraphic(
                 execution.ArgList.NextAs<ushort>(ArgumentList.Expectation.Mandatory),
                 execution.ArgList.NextAs<ushort>(),
-                execution.ArgList.NextAs<string>(),
+                execution.ArgList.NextAs<uint>(),
                 0,
                 execution.ArgList.NextAs<int>()
                 );
@@ -487,17 +493,143 @@ namespace ClassicUO.Game.Scripting
             else return false;
         }
 
+        private static bool MoveItem(CommandExecution execution)
+        {
+            var serial = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
+            var destination = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
+            var x = execution.ArgList.NextAs<int>();
+            var y = execution.ArgList.NextAs<int>();
+            var z = execution.ArgList.NextAs<int>();
+            var amount = execution.ArgList.NextAs<int>();
+
+            if (destination == 0 || destination == uint.MaxValue)
+            {
+                GameActions.Print("moveitem: destination not found");
+                return false;
+            }
+            else
+            {
+                GameActions.PickUp(serial, 0, 0, amount);
+                GameActions.DropItem(serial, 0xFFFF, 0xFFFF, 0, destination);
+                return true;
+            }
+           
+        }
+
+        private static bool MoveItemOffset(CommandExecution execution)
+        {
+            var serial = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
+            var destination = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
+            if(destination != uint.MaxValue) // GROUND is already defined as MaxValue for a unsigned int inside the GameActions class (for example in the DropItem method)
+            {
+                throw new ScriptSyntaxError("ops", null);
+            }
+            var x = World.Player.X + execution.ArgList.NextAs<int>();
+            var y = World.Player.Y + execution.ArgList.NextAs<int>() + 1 /*adding temporary due to issue with my dev env*/;
+            var z = World.Map.GetTileZ(x, y) + execution.ArgList.NextAs<int>();
+
+            var amount = execution.ArgList.NextAs<int>();
+
+            GameActions.PickUp(serial, 0, 0, amount);
+            GameActions.DropItem(serial, x, y, z, destination);
+
+            return true;
+        }
+
+        private static bool MoveType(CommandExecution execution)
+        {
+            var graphic = execution.ArgList.NextAs<ushort>(ArgumentList.Expectation.Mandatory);
+            var source = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
+            var destination = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
+            var x = execution.ArgList.NextAs<int>();
+            var y = execution.ArgList.NextAs<int>();
+            var z = execution.ArgList.NextAs<int>();
+            var color = execution.ArgList.NextAs<ushort>();
+            var amount = execution.ArgList.NextAs<int>();
+            var range = execution.ArgList.NextAs<int>();
+
+            Item item = CmdFindItemByGraphic(graphic, color, source, amount, range);
+            if (item != null)
+            {
+                GameActions.PickUp(item.Serial, 0, 0, amount);
+                GameActions.DropItem(item.Serial, 0xFFFF, 0xFFFF, 0, destination);
+            }
+            return true;
+        }
+
+        private static bool MoveTypeOffset(CommandExecution execution)
+        {
+            var graphic = execution.ArgList.NextAs<ushort>(ArgumentList.Expectation.Mandatory);
+            var source = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
+            var destination = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
+            if (destination != uint.MaxValue) // GROUND is already defined as MaxValue for a unsigned int inside the GameActions class (for example in the DropItem method)
+            {
+                throw new ScriptSyntaxError("ops", null);
+            }
+
+            var x = World.Player.X + execution.ArgList.NextAs<int>();
+            var y = World.Player.Y + execution.ArgList.NextAs<int>() + 1 /*adding temporary due to issue with my dev env*/;
+            var z = World.Map.GetTileZ(x, y) + execution.ArgList.NextAs<int>();
+            var color = execution.ArgList.NextAs<ushort>();
+            var amount = execution.ArgList.NextAs<int>();
+            var range = execution.ArgList.NextAs<int>();
+
+
+            Item item = CmdFindItemByGraphic(graphic, color, source, amount, range);
+            if (item != null)
+            {
+                GameActions.PickUp(item.Serial, 0, 0, amount);
+                GameActions.DropItem(item.Serial, x, y, z, destination);
+            }
+            return true;
+        }
+
+        private static bool UseSkill(CommandExecution execution)
+        {
+            var skill = execution.ArgList.NextAs<string>(ArgumentList.Expectation.Mandatory);
+            if (skill == "last")
+                GameActions.UseLastSkill();
+            else if (!GameActions.UseSkill(skill))
+                throw new ScriptRunTimeError(null, "That skill  is not usable");
+            return true;
+        }
+
+        private static bool Feed(CommandExecution execution)
+        {
+            try
+            {
+                var serial = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
+                List<ushort> foodList = new List<ushort>();
+                //ushort graphic;
+                //if (!args.TryAsGraphic(out graphic))
+                //{
+                //    var source = args.NextAsSource(ParameterList.ArgumentType.Mandatory);
+                //    destination = World.Player.FindItemByLayer((Layer)source).Serial;
+                //}
+                //else foodList.Add(graphic)
+                //var color = args.NextAs<ushort>();
+                //var amount = args.NextAs<int>();
+
+                //Item item = CmdFindObjectBySerial(serial, color);//, source, range);
+                //return item != null && item.Amount > amount;
+                return true;
+            }
+            catch (ScriptRunTimeError ex)
+            {
+                throw new ScriptSyntaxError("Usage: feed (serial) ('food name'/'food group'/'any'/graphic) [color] [amount]", ex);
+            }
+        }
+
         public static bool FindObject(CommandExecution execution)
         {
             Entity entity = CmdFindEntityBySerial(
                 execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory),
                 execution.ArgList.NextAs<ushort>(),
-                execution.ArgList.NextAs<string>(),
+                execution.ArgList.NextAs<uint>(),
                 execution.ArgList.NextAs<int>(),
                 execution.ArgList.NextAs<int>()
                 );
-    
-            if (entity != null)
+            if(entity != null)
             {
                 Aliases.Write<uint>("found", entity.Serial);
                 return true;
@@ -598,7 +730,7 @@ namespace ClassicUO.Game.Scripting
             Item item = CmdFindItemByGraphic(
                 execution.ArgList.NextAs<ushort>(ArgumentList.Expectation.Mandatory),
                 execution.ArgList.NextAs<ushort>(),
-                execution.ArgList.NextAs<string>(),
+                execution.ArgList.NextAs<uint>(),
                 execution.ArgList.NextAs<int>(),
                 execution.ArgList.NextAs<int>()
                 );
@@ -611,208 +743,50 @@ namespace ClassicUO.Game.Scripting
             else return false;
         }
 
-        //private static bool MoveItem(string command, ParameterList args)
-        //{
-        //    try
-        //    {
-        //        var serial = args.NextAsSerial(ParameterList.ArgumentType.Mandatory);
+        private static bool PromptAlias(CommandExecution execution)
+        {
+            // ATTENTION
+            // This method needs to change as Sleep is unacceptable. The caveat is the current Wait logic does not support part of execution running before it.
+            // Meaning that for the full Prompt logic, we would like to start the targeting process, than wait until a target is selected, and only than update the Alias.
+            //But current wait logic fully proceed the execution of the command… something for us to talk more.
 
-        //        // Destination can be both a Serial or Source (backpack, ground, etc)
-        //        uint destination;
-        //        if (!args.TryAsSerial(out destination))
-        //        {
-        //            var source = args.NextAsSource(ParameterList.ArgumentType.Mandatory);
-        //            destination = World.Player.FindItemByLayer((Layer)source).Serial;
-        //        }
-        //        //offest = new ParameterList.Position((int)World.Player.X, (int)World.Player.Y, (int)World.Player.Z);
-        //        var x = args.NextAs<int>();
-        //        var y = args.NextAs<int>();
-        //        var z = args.NextAs<int>();
-        //        var amount = args.NextAs<int>();
+            Interpreter.Pause(60000);
+            if (TargetManager.IsTargeting)
+            {
+                TargetManager.CancelTarget();
+            }
+            var alias = execution.ArgList.NextAs<string>(ArgumentList.Expectation.Mandatory);
+            GameActions.Print("Select the object '" + alias  + "'");
+            Task.Run(() =>
+            {
+                var currentTarget = TargetManager.LastTargetInfo.Serial;
+                DateTime targetingStarted = DateTime.UtcNow;
+                TargetManager.SetTargeting(CursorTarget.Object, 0, TargetType.Neutral);
+                while (TargetManager.LastTargetInfo.Serial == currentTarget && DateTime.UtcNow - targetingStarted < TimeSpan.FromSeconds(50))
+                {
+                    Thread.Sleep(25);
+                }
+                Aliases.Write<uint>(
+                    alias,
+                    TargetManager.LastTargetInfo.Serial
+                    );
+                Interpreter.Unpause();
+            });
+           
 
-        //        GameActions.PickUp(serial, 0, 0, amount);
-        //        GameActions.DropItem(
-        //            serial,
-        //            x+ World.Player.X,
-        //            y + World.Player.Y,
-        //            z + World.Player.Z,
-        //            destination);
+            //if (!_hasPrompt)
+            //{
+            //    _hasPrompt = true;
+            //    Targeting.OneTimeTarget((location, serial, p, gfxid) =>
+            //    {
+                    
+            //    });
+            //    return false;
+            //}
 
-        //        return true;
-        //    }
-        //    catch (ScriptRunTimeError ex)
-        //    {
-        //        throw new ScriptSyntaxError("Usage: moveitem (serial) (destination) [(x, y, z)] [amount]", ex);
-        //    }
-        //}
-
-        //private static bool Walk(string command, ParameterList args)
-        //{
-        //    try
-        //    {
-        //        var direction = args.NextAsDirection(ParameterList.ArgumentType.Mandatory);
-
-        //        //if (World.Player.Direction != (Direction)direction.First())
-        //        //{
-        //        //    // if the player is not currently facing into the direction of the run
-        //        //    // then the player will turn first, and run next - this helps so that 
-        //        //    // scripts do not need to include "turn" commands or call "run" multiple
-        //        //    // times just to achieve the same result
-        //        //    movementCooldown = DateTime.UtcNow + turnMs;
-        //        //    World.Player.Walk((Direction)direction.First(), true);
-        //        //    return false;
-        //        //}
-
-        //        var movementDelay = ProfileManager.CurrentProfile.AlwaysRun ? runMs : walkMs;
-
-        //        if (World.Player.FindItemByLayer(Layer.Mount) != null)
-        //        {
-        //            if (ProfileManager.CurrentProfile.AlwaysRun)
-        //            {
-        //                movementDelay = mountedRunMs;
-        //            }
-        //            else
-        //            {
-        //                movementDelay = mountedWalkMs;
-        //            }
-        //        }
-
-        //        movementCooldown = DateTime.UtcNow + movementDelay;
-
-        //        foreach (var dir in direction)
-        //        {
-        //            World.Player.Walk((Direction)dir, ProfileManager.CurrentProfile.AlwaysRun);
-        //            //if (!World.Player.Walk((Direction)dir, ProfileManager.CurrentProfile.AlwaysRun))
-        //            //return false;
-        //        }
-        //        return true;
-        //    }
-        //    catch (ScriptRunTimeError ex)
-        //    {
-        //        throw new ScriptSyntaxError("Usage: walk ('direction name')", ex);
-        //    }
-        //}
-
-        //private static bool Turn(string command, ParameterList args)
-        //{
-        //    try
-        //    {
-        //        var direction = args.NextAsDirection(ParameterList.ArgumentType.Mandatory);
-
-        //        if (DateTime.UtcNow < movementCooldown)
-        //        {
-        //            return false;
-        //        }
-
-        //        foreach (var dir in direction)
-        //        {
-        //            if (World.Player.Direction != (Direction)dir)
-        //            {
-        //                movementCooldown = DateTime.UtcNow + turnMs;
-        //                if(!World.Player.Walk((Direction)dir, true))
-        //                    return false;
-        //            }
-        //        }
-        //        return true;
-        //    }
-        //    catch (ScriptRunTimeError ex)
-        //    {
-        //        throw new ScriptSyntaxError("Usage: walk ('direction name')", ex);
-        //    }
-        //}
-
-        //private static bool Run(string command, ParameterList args)
-        //{
-        //    try
-        //    {
-        //        var direction = args.NextAsDirection(ParameterList.ArgumentType.Mandatory);
-
-        //        if(DateTime.UtcNow < movementCooldown)
-        //        {
-        //            return false;
-        //        }
-
-        //        //if (World.Player.Direction != (Direction)direction.First())
-        //        //{
-        //        //    // if the player is not currently facing into the direction of the run
-        //        //    // then the player will turn first, and run next - this helps so that 
-        //        //    // scripts do not need to include "turn" commands or call "run" multiple
-        //        //    // times just to achieve the same result
-        //        //    movementCooldown = DateTime.UtcNow + turnMs;
-        //        //    World.Player.Walk((Direction)direction.First(), true);
-        //        //    return false;
-        //        //}
-
-        //        var movementDelay = runMs;
-
-        //        if (World.Player.FindItemByLayer(Layer.Mount) != null)
-        //        {
-        //            movementDelay = mountedRunMs;
-        //        }
-
-        //        movementCooldown = DateTime.UtcNow + movementDelay;
-
-        //        foreach (var dir in direction)
-        //        {
-        //            if (!World.Player.Walk((Direction)dir, true))
-        //                return false;
-        //        }
-        //        return true;
-        //    }
-        //    catch (ScriptRunTimeError ex)
-        //    {
-        //        throw new ScriptSyntaxError("Usage: walk ('direction name')", ex);
-        //    }
-        //}
-
-        //private static bool UseSkill(string command, ParameterList args)
-        //{
-        //    try
-        //    {
-        //        if (args[0].As<string>() == "last")
-        //        {
-        //            GameActions.UseLastSkill();
-        //            return true;
-        //        }
-        //        string skillName = args[0].As<string>();
-
-        //        if (!GameActions.UseSkill(skillName))
-        //        {
-        //            throw new ScriptRunTimeError(null, "That skill  is not usable");
-        //        }
-        //        return true;
-        //    }
-        //    catch (ScriptRunTimeError ex)
-        //    {
-        //        throw new ScriptSyntaxError("Usage: useskill ('skill name'/'last')", ex);
-        //    }
-        //}
-
-        //private static bool Feed(string command, ParameterList args)
-        //{
-        //    try
-        //    {
-        //        var serial = args.NextAsSerial(ParameterList.ArgumentType.Mandatory);
-        //        List<ushort> foodList = new List<ushort>();
-        //        //ushort graphic;
-        //        //if (!args.TryAsGraphic(out graphic))
-        //        //{
-        //        //    var source = args.NextAsSource(ParameterList.ArgumentType.Mandatory);
-        //        //    destination = World.Player.FindItemByLayer((Layer)source).Serial;
-        //        //}
-        //        //else foodList.Add(graphic)
-        //        var color = args.NextAs<ushort>();
-        //        var amount = args.NextAs<int>();
-
-        //        //Item item = CmdFindObjectBySerial(serial, color);//, source, range);
-        //        //return item != null && item.Amount > amount;
-        //        return true;
-        //    }
-        //    catch (ScriptRunTimeError ex)
-        //    {
-        //        throw new ScriptSyntaxError("Usage: feed (serial) ('food name'/'food group'/'any'/graphic) [color] [amount]", ex);
-        //    }
-        //}
+            //_hasPrompt = false;
+            return true;
+        }
 
         //private static bool UnimplementedCommand(string command, ParameterList args)
         //{
@@ -1448,25 +1422,26 @@ namespace ClassicUO.Game.Scripting
 
         // HELPER FUNCTIONS FOR THE COMMANDS
 
-        private static Entity CmdFindEntityBySerial(uint serial, ushort color, string source = "any", int amount = 0, int range = 0)
+        private static Entity CmdFindEntityBySerial(uint serial, ushort color = ushort.MaxValue, uint source = 0, int amount = 0, int range = 0)
         {
             // Try fetching and Item from Serial
             Entity entity = null;
             var graphic = World.GetOrCreateItem(serial).Graphic;
 
-            if (source == "any")
+            if (source == 0 /*Zero value is Any*/)
             {
                 // Any also look at the ground if not found in player belongings
                 entity = World.Player.FindItem(graphic, color);
                 if (entity != null)
                     entity = World.Player.FindItemByTypeOnGroundWithHueInRange(graphic, color, range);
             }
-            else if (source == "ground")
+            else if (source == uint.MaxValue /*Max value is Ground*/)
                 entity = World.Player.FindItemByTypeOnGroundWithHueInRange(graphic, color, range);
             else
             {
-                var layer = (Layer)Enum.Parse(typeof(Layer), source, true);
-                entity = World.Player.FindItemByLayer(layer)?.FindItem(graphic, color);
+                //var layer = (Layer)Enum.Parse(typeof(Layer), source, true);
+                //entity = World.Player.FindItemByLayer(layer)?.FindItem(graphic, color);
+                entity = World.GetOrCreateItem(source).FindItem(graphic, color);
             }
 
             // If we have an item, check ammount
@@ -1480,21 +1455,22 @@ namespace ClassicUO.Game.Scripting
             return entity;
         }
 
-        private static Item CmdFindItemByGraphic(ushort graphic, ushort color = ushort.MaxValue, string source = "any", int amount = 0, int range = 0)
+        private static Item CmdFindItemByGraphic(ushort graphic, ushort color = ushort.MaxValue, uint source = 0, int amount = 0, int range = 0)
         {
             Item item = null;
-            if (source == "any")
+            if (source == 0 /*Zero value is Any*/)
             {
                 item = World.Player.FindItem(graphic, color);
                 if (item != null) // For Any, also look at the ground if not found in player belongings
                     item = World.Player.FindItemByTypeOnGroundWithHueInRange(graphic, color, range);
             }
-            else if (source == "ground")
+            else if (source == uint.MaxValue /*Max value is Ground*/)
                 item = World.Player.FindItemByTypeOnGroundWithHueInRange(graphic, color, range);
             else
             {
-                var layer = (Layer)Enum.Parse(typeof(Layer), source, true);
-                item = World.Player.FindItemByLayer(layer)?.FindItem(graphic, color);
+                item = World.GetOrCreateItem(source).FindItem(graphic, color);
+                //var layer = (Layer)Enum.Parse(typeof(Layer), source, true);
+                //item = World.Player.FindItemByLayer(layer)?.FindItem(graphic, color);
             }
 
             if (item != null && item.Amount < amount)
@@ -1525,7 +1501,7 @@ namespace ClassicUO.Game.Scripting
             };
         }
 
-        // Wait for a given amount of milliseconds (suing "curry" technique for param reduction)
+        // Wait for a given amount of milliseconds (using "curry" technique for param reduction)
         public static Command.Handler WaitForMs(int waitTime)
         {
             return (execution) => { return (execution.CreationTime - DateTime.Now > TimeSpan.FromMilliseconds(waitTime)); };
