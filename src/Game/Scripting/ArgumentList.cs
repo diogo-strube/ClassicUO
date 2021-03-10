@@ -229,7 +229,7 @@ namespace ClassicUO.Game.Scripting
             if (typeof(T) == typeof(string))
             {
                 if(argValue == null)
-                    argValue = (T)Convert.ChangeType(string.Empty, typeof(string));
+                    argDefault = argValue = (T)Convert.ChangeType(string.Empty, typeof(string));
                 else
                     argValue = (T)Convert.ChangeType(argValue.ToString().ToLower(), typeof(string));
             }            

@@ -33,7 +33,10 @@ using ClassicUO.Game.Data;
 using ClassicUO.Game.GameObjects;
 using ClassicUO.Game.Managers;
 using ClassicUO.Game.Scenes;
+using ClassicUO.Game.UI.Gumps;
+using ClassicUO.Input;
 using ClassicUO.Network;
+using SDL2;
 
 namespace ClassicUO.Game.Scripting
 {
@@ -52,20 +55,17 @@ namespace ClassicUO.Game.Scripting
         // Indicated if the quiet (@) modifier was used
         public bool Quiet { get; }
 
-        // Time execution was created/requested
-        public DateTime CreationTime { get; }
-
         // Provide access to the time a given command was last executed
-        private static Dictionary<string, DateTime> _lastExecutedRegistry = new Dictionary<string, DateTime>();
-        public static DateTime LastExecuted(params string[] commandKeywords)
+        private static Dictionary<string, uint> _lasCheckedRegistry = new Dictionary<string, uint>();
+
+        public uint LastChecked
         {
-            DateTime lastExecuted = DateTime.UtcNow.AddHours(-2.0); // 2 hours ago
-            foreach(string key in commandKeywords)
+            get
             {
-                if (_lastExecutedRegistry.ContainsKey(key) && _lastExecutedRegistry[key] > lastExecuted)
-                    lastExecuted = _lastExecutedRegistry[key];
+                if (!_lasCheckedRegistry.ContainsKey(Cmd.Keyword))
+                    _lasCheckedRegistry[Cmd.Keyword] = ClassicUO.Time.Ticks;
+                return _lasCheckedRegistry[Cmd.Keyword];
             }
-            return lastExecuted;
         }
 
         // Build execution
@@ -75,7 +75,7 @@ namespace ClassicUO.Game.Scripting
             ArgList = argList;
             Quiet = quiet;
             Force = force;
-            CreationTime = DateTime.UtcNow;
+           
         }
 
         // This method check if it is time to execute the command and if the time is right, perform the execution
@@ -84,8 +84,17 @@ namespace ClassicUO.Game.Scripting
         {
             if (Cmd.WaitLogic(this)) // check if waiting is over (no blocking, we keep checking as Razor does)
             {
-                _lastExecutedRegistry[Cmd.Keyword] = DateTime.UtcNow; // store time of this execution (as the last execution)
-                return Cmd.ExecutionLogic(this); // execute the command and do the magic
+                try
+                {
+                    _lasCheckedRegistry[Cmd.Keyword] = ClassicUO.Time.Ticks; // store time of this execution (as the last execution)
+                    return Cmd.ExecutionLogic(this); // execute the command and do the magic
+                }
+                catch(ScriptRunTimeError ex)
+                {
+                    GameActions.Print(Cmd.Keyword + ": " + ex.Message, type: MessageType.System);
+                    Interpreter.ClearTimeout();
+                    return true;
+                }
             }
             else return false;
         }
@@ -94,9 +103,6 @@ namespace ClassicUO.Game.Scripting
     // Loosely types abstraction of a command using strings to define expected usage and types
     public class Command
     {
-        // All commands share access to the execution queues
-        public static Dictionary<Attributes, Queue<CommandExecution>> Queues = new Dictionary<Attributes, Queue<CommandExecution>>();
-
         // Delegate to allow customization of how execution (both action logic and wait logic) are performed
         public delegate bool Handler(CommandExecution execution);
 
@@ -115,36 +121,13 @@ namespace ClassicUO.Game.Scripting
         // Handler to perform wait logic (deciding if command can execute)
         public Handler WaitLogic { get; }
 
-        // Defines what to command related to when it comes to game logic
-        // Also used to organize execution queues
-        [Flags]
-        public enum Attributes
-        {
-            ScriptAction = 0,       // This command is related to a script logic unrelated to the game logic, such as aliases
-            ForceBypassQueue = 1,   // Force also means bypassing the queue
-            ComplexInterAction = 2, // This command is related to a complex interaction, like drag and drop something in game
-            SimpleInterAction = 4,  // This command is related to a simple interaction, like a click or dclick in an object
-            StateAction = 8,        // This command is related a game state, such as finding an object in the ground
-            PlayerAction = 16,      // This command is related to a player driven action, like moving or attacking
-        }
-        public Attributes Attribute { get; }
-
         // Several flavors of constructors for quality of life
         #region Constructors
         public Command(string usage, Handler executionLogic, Handler waitLogic)
-            : this(usage, executionLogic, waitLogic, Attributes.ScriptAction)
-        {
-        }
-        public Command(string usage, Handler executionLogic, Handler waitLogic, Attributes attribute)
         {
             Usage = usage;
             ExecutionLogic = executionLogic;
             WaitLogic = waitLogic;
-            Attribute = attribute;
-
-            // Make sure a queue exists for this command category
-            if (!Queues.ContainsKey(Attribute))
-                Queues.Add(Attribute, new Queue<CommandExecution>());
 
             // Processing keywords and arguments in constructor to avoid logic on every command execution
             if (usage.Count(f => f == ' ') > 0)
@@ -168,11 +151,7 @@ namespace ClassicUO.Game.Scripting
         {
             // Build execution
             var execution = CreateExecution(args, quiet, force);
-            if ((force && (Attribute & Attributes.ForceBypassQueue) == Attributes.ForceBypassQueue) || // perform logic now if queue should be bypassed
-                (Attribute & Attributes.ForceBypassQueue) == Attributes.ScriptAction)  // also perform logic now if action is script logic
-                return execution.Process();
-            else Queues[Attribute].Enqueue(execution); // otherwise queue it
-            return true;
+            return execution.Process();
         }
 
         // Retrieving an execution is showing that the Process logic may not be part of the command,
@@ -190,6 +169,11 @@ namespace ClassicUO.Game.Scripting
     // Class grouping all command related functionality, including implemented handles
     public static class Commands
     {
+        // Agent related storages (to be moved to Profile)?
+        // Profiles are very similar to lists, but instead of string containg serials
+        // Commands such as Organizer and Dress use profiles
+        static public Dictionary<string, List<uint>> Profiles = new Dictionary<string, List<uint>>();
+
         // Registry of available commands retrivable by name (keyword)
         public static Dictionary<string, Command> Definitions = new Dictionary<string, Command>();
         private static void AddDefinition(Command cmd)
@@ -220,43 +204,63 @@ namespace ClassicUO.Game.Scripting
             ArgumentList.AddMap("direction", "northeast", "right");
             ArgumentList.AddMap("direction", "northwest", "up");
 
+            // Adding default profiles
+            Profiles.Add("dressconfig-temporary", new List<uint>());
+            Profiles.Add("temporary-generic", new List<uint>());
+
             // Add definitions for all supported commands
-            AddDefinition(new Command("setability ('primary'/'secondary'/'stun'/'disarm') ['on'/'off']", SetAbility, WaitForMs(500), Command.Attributes.StateAction));
-            AddDefinition(new Command("attack (serial)", Attack, WaitForMs(500), Command.Attributes.SimpleInterAction));
-            AddDefinition(new Command("clearhands ('left'/'right'/'both')", ClearHands, WaitForMs(500), Command.Attributes.ComplexInterAction));
-            AddDefinition(new Command("clickobject (serial)", ClickObject, WaitForMs(500), Command.Attributes.SimpleInterAction));
-            AddDefinition(new Command("bandageself", BandageSelf, WaitForMs(500), Command.Attributes.SimpleInterAction));
-            AddDefinition(new Command("usetype (graphic) [color] [source] [range or search level]", UseType, WaitForMs(500), Command.Attributes.SimpleInterAction));
-            AddDefinition(new Command("useobject (serial)", UseObject, WaitForMs(500), Command.Attributes.SimpleInterAction));
-            AddDefinition(new Command("useonce (graphic) [color]", UseOnce, WaitForMs(500), Command.Attributes.SimpleInterAction));
-            AddDefinition(new Command("moveitem (serial) (destination) [(x, y, z)] [amount]", MoveItem, WaitForMs(500), Command.Attributes.ComplexInterAction));
-            AddDefinition(new Command("moveitemoffset (serial) 'ground' [(x, y, z)] [amount]", MoveItemOffset, WaitForMs(500), Command.Attributes.ComplexInterAction));
-            AddDefinition(new Command("movetype (graphic) (source) (destination) [(x, y, z)] [color] [amount] [range or search level]", MoveType, WaitForMs(500), Command.Attributes.ComplexInterAction));
-            AddDefinition(new Command("movetypeoffset (graphic) (source) 'ground' [(x, y, z)] [color] [amount] [range or search level]", MoveTypeOffset, WaitForMs(500), Command.Attributes.ComplexInterAction));        
-            AddDefinition(new Command("walk (direction)", MovementLogic(false), WaitForMovement, Command.Attributes.PlayerAction));
-            AddDefinition(new Command("turn (direction)", MovementLogic(false), WaitForMovement, Command.Attributes.PlayerAction));
-            AddDefinition(new Command("run (direction)", MovementLogic(true), WaitForMovement, Command.Attributes.PlayerAction));
-            AddDefinition(new Command("useskill ('skill name'/'last')", UseSkill, WaitForMs(500), Command.Attributes.SimpleInterAction));
-            AddDefinition(new Command("feed (serial) ('food name'/'food group'/'any'/graphic) [color] [amount]", Feed, WaitForMs(500), Command.Attributes.ComplexInterAction));
-            AddDefinition(new Command("rename (serial) ('name')", Rename, WaitForMs(500), Command.Attributes.ComplexInterAction));
-            AddDefinition(new Command("shownames ['mobiles'/'corpses']", ShowNames, WaitForMs(200), Command.Attributes.SimpleInterAction));
-            AddDefinition(new Command("togglehands ('left'/'right')", ToggleHands, WaitForMs(500), Command.Attributes.ComplexInterAction));
-            AddDefinition(new Command("equipitem (serial) (layer)", EquipItem, WaitForMs(500), Command.Attributes.ComplexInterAction));
-            AddDefinition(new Command("togglemounted", ToggleMounted, WaitForMs(500), Command.Attributes.ComplexInterAction));
-
-            AddDefinition(new Command("findtype (graphic) [color] [source] [amount] [range or search level]", BandageSelf, WaitForMs(500), Command.Attributes.SimpleInterAction));
-            AddDefinition(new Command("findobject (serial) [color] [source] [amount] [range]", FindObject, WaitForMs(100), Command.Attributes.StateAction));
-            
-            AddDefinition(new Command("poplist ('list name') ('element value'/'front'/'back')", PopList, WaitForMs(25)));
-            AddDefinition(new Command("pushlist ('list name') ('element value') ['front'/'back']", PushList, WaitForMs(25)));
-            AddDefinition(new Command("createlist ('list name')", CreateList, WaitForMs(25)));
-            AddDefinition(new Command("removelist ('list name')", RemoveList, WaitForMs(25)));
-            AddDefinition(new Command("msg ('text') [color]", Msg, WaitForMs(25)));
-            AddDefinition(new Command("setalias ('alias name') [serial]", SetAlias, WaitForMs(25)));
-            AddDefinition(new Command("unsetalias ('alias name')", UnsetAlias, WaitForMs(25)));
-            AddDefinition(new Command("promptalias ('alias name')", PromptAlias, WaitForMs(25), Command.Attributes.ComplexInterAction));
-
-
+            AddDefinition(new Command("setability ('primary'/'secondary'/'stun'/'disarm') ['on'/'off']", SetAbility, WaitForMs()));
+            AddDefinition(new Command("attack (serial)", Attack, WaitForMs()));
+            AddDefinition(new Command("clearhands ('left'/'right'/'both')", ClearHands, WaitForMs()));
+            AddDefinition(new Command("clickobject (serial)", ClickObject, WaitForMs()));
+            AddDefinition(new Command("bandageself", BandageSelf, WaitForMs()));
+            AddDefinition(new Command("usetype (graphic) [color] [source] [range or search level]", UseType, WaitForMs()));
+            AddDefinition(new Command("useobject (serial)", UseObject, WaitForMs()));
+            AddDefinition(new Command("useonce (graphic) [color]", UseOnce, WaitForMs()));
+            AddDefinition(new Command("moveitem (serial) (destination) [(x, y, z)] [amount]", MoveItem, WaitForMs()));
+            AddDefinition(new Command("moveitemoffset (serial) 'ground' [(x, y, z)] [amount]", MoveItemOffset, WaitForMs()));
+            AddDefinition(new Command("movetype (graphic) (source) (destination) [(x, y, z)] [color] [amount] [range or search level]", MoveType, WaitForMs()));
+            AddDefinition(new Command("movetypeoffset (graphic) (source) 'ground' [(x, y, z)] [color] [amount] [range or search level]", MoveTypeOffset, WaitForMs()));        
+            AddDefinition(new Command("walk (direction)", MovementLogic(false), WaitForMovement));
+            AddDefinition(new Command("turn (direction)", MovementLogic(false), WaitForMovement));
+            AddDefinition(new Command("run (direction)", MovementLogic(true), WaitForMovement));
+            AddDefinition(new Command("useskill ('skill name'/'last')", UseSkill, WaitForMs()));
+            AddDefinition(new Command("feed (serial) ('food name'/'food group'/'any'/graphic) [color] [amount]", Feed, WaitForMs()));
+            AddDefinition(new Command("rename (serial) ('name')", Rename, WaitForMs()));
+            AddDefinition(new Command("shownames ['mobiles'/'corpses']", ShowNames, WaitForMs()));
+            AddDefinition(new Command("togglehands ('left'/'right')", ToggleHands, WaitForMs()));
+            // UO Steam: we are making it different from  UO Steam and allowing the layer to be optional
+            AddDefinition(new Command("equipitem (serial) [layer]", EquipItem, WaitForMs()));
+            AddDefinition(new Command("togglemounted", ToggleMounted, WaitForMs()));
+            //AddDefinition(new Command("equipwand ('spell name'/'any'/'undefined') [minimum charges]", EquipWand, WaitForMs(500), Command.Attributes.ComplexInterAction));
+            //AddDefinition(new Command("buy ('list name')", Buy, WaitForMs(500), Command.Attributes.ComplexInterAction));
+            //AddDefinition(new Command("sell ('list name')", Sell, WaitForMs(500), Command.Attributes.ComplexInterAction));
+            //AddDefinition(new Command("clearbuy", ClearBuy, WaitForMs(500), Command.Attributes.ComplexInterAction));
+            //AddDefinition(new Command("clearsell", ClearSell, WaitForMs(500), Command.Attributes.ComplexInterAction));
+            //AddDefinition(new Command("organizer ('profile name') [source] [destination]", Organizer, WaitForMs(500), Command.Attributes.ComplexInterAction));
+            //AddDefinition(new Command("organizing", Organizing, WaitForMs(500), Command.Attributes.ComplexInterAction));
+            AddDefinition(new Command("autoloot", UnsupportedCmd, WaitForMs()));
+            AddDefinition(new Command("dress ['profile name']", Dress, WaitForMs()));
+            AddDefinition(new Command("undress ['profile name']", Undress, WaitForMs()));
+            AddDefinition(new Command("dressconfig", Dressconfig, WaitForMs()));
+            AddDefinition(new Command("toggleautoloot", UnsupportedCmd, WaitForMs()));
+            //AddDefinition(new Command("togglescavenger", UnsupportedCmd, WaitForMs(25)));
+            AddDefinition(new Command("clickscreen (x) (y) ['single'/'double'] ['left'/'right']", ClickScreen, WaitForMs()));
+            AddDefinition(new Command("findtype (graphic) [color] [source] [amount] [range or search level]", FindType, WaitForMs()));
+            AddDefinition(new Command("findobject (serial) [color] [source] [amount] [range]", FindObject, WaitForMs()));
+            AddDefinition(new Command("poplist ('list name') ('element value'/'front'/'back')", PopList, WaitForMs()));
+            AddDefinition(new Command("pushlist ('list name') ('element value') ['front'/'back']", PushList, WaitForMs()));
+            AddDefinition(new Command("createlist ('list name')", CreateList, WaitForMs()));
+            AddDefinition(new Command("removelist ('list name')", RemoveList, WaitForMs()));
+            AddDefinition(new Command("msg ('text') [color]", Msg, WaitForMs()));
+            AddDefinition(new Command("setalias ('alias name') [serial]", SetAlias, WaitForMs()));
+            AddDefinition(new Command("unsetalias ('alias name')", UnsetAlias, WaitForMs()));
+            AddDefinition(new Command("promptalias ('alias name')", PromptAlias, WaitForMs()));
+            AddDefinition(new Command("findalias ('alias name')", FindAlias, WaitForMs()));
+            AddDefinition(new Command("waitforgump (gump id/'any') (timeout)", WaitForGump, WaitForMs()));
+            AddDefinition(new Command("waitfortarget (timeout)", WaitForTarget, WaitForMs()));
+            AddDefinition(new Command("pause (timeout)", Pause, WaitForMs()));
+            AddDefinition(new Command("target (serial)", ClickTarget, WaitForMs()));
             ////Interpreter.RegisterCommandHandler("poplist", );
             //Interpreter.RegisterCommandHandler("pushlist", );
             ////Interpreter.RegisterCommandHandler("removelist", );
@@ -292,16 +296,6 @@ namespace ClassicUO.Game.Scripting
             //Interpreter.RegisterCommandHandler("pause", Pause);
 
 
-
-
-
-
-            //Interpreter.RegisterCommandHandler("shownames", ShowNames);
-            //Interpreter.RegisterCommandHandler("togglehands", ToggleHands);
-            //Interpreter.RegisterCommandHandler("equipitem", EquipItem);
-            ////Interpreter.RegisterCommandHandler("dress", DressCommand);
-            ////Interpreter.RegisterCommandHandler("undress", UnDressCommand);
-            ////Interpreter.RegisterCommandHandler("dressconfig", DressConfig);
             ////Interpreter.RegisterCommandHandler("togglescavenger", ToggleScavenger);
 
             ////Interpreter.RegisterCommandHandler("promptalias", PromptAlias);
@@ -397,69 +391,198 @@ namespace ClassicUO.Game.Scripting
             //Interpreter.RegisterCommandHandler("getfriend", UnimplementedCommand);
         }
 
+        private static string SetAbility_LastAbility = "";
         private static bool SetAbility(CommandExecution execution)
         {
+            // += UO Steam =========================================================================+
+            // |  - If changed, ability needs to be printed in green                                |
+            // +====================================================================================+
             var ability = execution.ArgList.NextAs<string>(ArgumentList.Expectation.Mandatory).ToLower();
-            var toggle = execution.ArgList.NextAs<string>(ArgumentList.Expectation.Mandatory).ToLower();
-            if (toggle == "on")
+            var toggle = execution.ArgList.NextAs<string>().ToLower();
+            if (toggle == String.Empty || toggle == "on")
             {
+                string abilityName;
+                GameActions.Print($"SetAbility: Turning {ability} on", hue: 0x104, type: MessageType.System);
                 switch (ability)
                 {
                     case "primary":
-                        GameActions.UsePrimaryAbility();
+                        abilityName = Enum.GetName(typeof(Ability), World.Player.Abilities[0]);
+                        GameActions.UsePrimaryAbility();  
                         break;
                     case "secondary":
-                        GameActions.UseSecondaryAbility();
+                        abilityName = Enum.GetName(typeof(Ability), World.Player.Abilities[1]);
+                        GameActions.UseSecondaryAbility();         
                         break;
                     case "stun":
                         GameActions.RequestStun();
+                        abilityName = "Stun";
                         break;
                     case "disarm":
                         GameActions.RequestDisarm();
+                        abilityName = "Disarm";
                         break;
+                    default:
+                        throw new ScriptSyntaxError("invalid ability type");
+                }
+
+                if(abilityName != SetAbility_LastAbility)
+                {
+                    SetAbility_LastAbility = abilityName;
+                    GameActions.Print($"Ability: {SetAbility_LastAbility}", hue: 0x44 /*green*/, type: MessageType.System);
                 }
             }
             else
             {
                 GameActions.ClearAbility();
+                GameActions.Print($"SetAbility: Turning {ability} on", hue: 0x104, type: MessageType.System);
             }
             return true;
         }
+
         private static bool Attack(CommandExecution execution)
         {
+            // += UO Steam =========================================================================+
+            // |  - No feedback at all if attack does not work                                      |
+            // +====================================================================================+
             var serial = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
+            GameActions.Print($"Attack: attacking {serial}", hue: 0x104, type: MessageType.System);
             GameActions.Attack(serial);
             return true;
         }
 
+        private static uint[] ClearHands_Items = new uint[2] { 0, 0};
         private static bool ClearHands(CommandExecution execution)
         {
-            var hand = execution.ArgList.NextAs<string>(ArgumentList.Expectation.Mandatory).ToLower();
-            if (hand == "both")
+            // += UO Steam =========================================================================+
+            // |  - Will ignore command (returning success) if holding/dragging an item             |
+            // +====================================================================================+
+            Interpreter.Timeout(5000, () => {
+                ClearHands_Items = new uint[2] { 0, 0 };
+                GameActions.Print($"ClearHands: TIMEOUT", hue: 0x104, type: MessageType.System);
+                return true;
+            });
+
+            var backpack = World.Player.FindItemByLayer(Layer.Backpack);
+            if (ClearHands_Items[0] == 0 && ClearHands_Items[1] == 0) // Try equipping only if not yet equipping
             {
-                GameActions.ClearEquipped(IO.ItemExt_PaperdollAppearance.Left);
-                GameActions.ClearEquipped(IO.ItemExt_PaperdollAppearance.Right);
+                if (ItemHold.Enabled)
+                {
+                    GameActions.Print($"You are already holding an item", type: MessageType.Command);
+                    GameActions.DropItem(ItemHold.Serial, ItemHold.X, ItemHold.Y, ItemHold.Z, ItemHold.Container);
+                }
+                else
+                {
+                    var hand = execution.ArgList.NextAs<string>(ArgumentList.Expectation.Mandatory).ToLower();
+                    var rightHand = World.Player.FindItemByLayer(Layer.HeldInHand1);
+                    var leftHand = World.Player.FindItemByLayer(Layer.HeldInHand2);
+                    switch (hand)
+                    {
+                        case "both":
+                            if (rightHand != null)
+                            {
+                                ClearHands_Items[0] = rightHand.Serial;
+                                GameActions.Print($"ClearHands: Picking up {ClearHands_Items[0]}", hue: 0x104, type: MessageType.System);
+                                GameActions.PickUp(ClearHands_Items[0], 0, 0, 1);
+                            }
+                            if (leftHand != null)
+                            {
+                                ClearHands_Items[1] = leftHand.Serial;
+                                GameActions.Print($"ClearHands: Picking up {ClearHands_Items[1]}", hue: 0x104, type: MessageType.System);
+                                GameActions.PickUp(ClearHands_Items[1], 0, 0, 1);
+                            }
+                            break;
+                        case "left":
+
+                            if (leftHand != null)
+                            {
+                                ClearHands_Items[1] = leftHand.Serial;
+                                GameActions.Print($"ClearHands: Picking up {ClearHands_Items[1]}", hue: 0x104, type: MessageType.System);
+                                GameActions.PickUp(ClearHands_Items[1], 0, 0, 1);
+                            }
+                            break;
+                        case "right":
+                            if (rightHand != null)
+                            {
+                                ClearHands_Items[0] = rightHand.Serial;
+                                GameActions.Print($"ClearHands: Picking up {ClearHands_Items[0]}", hue: 0x104, type: MessageType.System);
+                                GameActions.PickUp(ClearHands_Items[0], 0, 0, 1);
+                            }
+                            break;
+                        default:
+                            throw new ScriptSyntaxError(execution.Cmd.Usage);
+                    }
+                }
             }
-            else GameActions.ClearEquipped((IO.ItemExt_PaperdollAppearance)Enum.Parse(typeof(Direction), hand, true));
-            return true;
+            else
+            {
+                // Drop items
+                if (ClearHands_Items[0] != 0)
+                {
+                    if (ItemHold.Enabled)
+                    {
+                        GameActions.Print($"ClearHands: Drop {ClearHands_Items[0]}", hue: 0x104, type: MessageType.System);
+                        GameActions.DropItem(ClearHands_Items[0], 0xFFFF, 0xFFFF, 0, backpack);
+                    }
+                    else if (World.Get(ClearHands_Items[0]) is Item rightItem && rightItem?.Container == backpack)
+                        ClearHands_Items[0] = 0;
+                }
+                if (ClearHands_Items[1] != 0)
+                {
+                    if (ItemHold.Enabled)
+                    {
+                        GameActions.Print($"ClearHands: Drop {ClearHands_Items[1]}", hue: 0x104, type: MessageType.System);
+                        GameActions.DropItem(ClearHands_Items[1], 0xFFFF, 0xFFFF, 0, backpack);
+                    }
+                    else if (World.Get(ClearHands_Items[1]) is Item rightItem && rightItem?.Container == backpack)
+                        ClearHands_Items[1] = 0;
+                } 
+            }
+
+            // Return false until items are moved to the backpack
+            var cleared = (ClearHands_Items[0] == 0 && ClearHands_Items[1] == 0);
+            if(cleared)
+                Interpreter.ClearTimeout();
+            return cleared;
         }
 
         private static bool ClickObject(CommandExecution execution)
         {
+            // += UO Steam =========================================================================+
+            // |  - Click msg appears on cursor position if object out of range (we cant do it)     |
+            // +====================================================================================+
             var serial = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
-            GameActions.SingleClick(serial);
+            if (World.Get(serial) == null)
+                throw new ScriptSyntaxError("item or mobile not found");
+            else
+            {
+                GameActions.Print($"ClickObject: single click at {serial}", hue: 0x104, type: MessageType.System);
+                GameActions.SingleClick(serial);
+            }
             return true;
         }
 
         private static bool BandageSelf(CommandExecution execution)
         {
-            GameActions.BandageSelf();
-            // TODO: maybe return false if no badages or other constraints?
+            // += UO Steam =========================================================================+
+            // |  - Use once requires item to be in the backpack (floor or equipped is ignored)     |
+            // +====================================================================================+
+            Item bandage = World.Player.FindBandage();
+            if (bandage != null)
+            {
+                GameActions.Print($"BandageSelf: using bandages", hue: 0x104, type: MessageType.System);
+                ClassicUO.Network.NetClient.Socket.Send(new PTargetSelectedObject(bandage.Serial, World.Player.Serial));
+            }
+            else
+                throw new ScriptSyntaxError("bandages not found");
             return true;
         }
 
         private static bool UseType(CommandExecution execution)
         {
+            // += UO Steam =========================================================================+
+            // |  - Serial has to be an item, Mobiles are ignored                                   |
+            // |  - Use once requires item to be in the backpack (floor or equipped is ignored)     |
+            // +====================================================================================+
             Item item = CmdFindItemByGraphic(
                 execution.ArgList.NextAs<ushort>(ArgumentList.Expectation.Mandatory),
                 execution.ArgList.NextAs<ushort>(),
@@ -467,99 +590,302 @@ namespace ClassicUO.Game.Scripting
                 0,
                 execution.ArgList.NextAs<int>()
                 );
-
             if (item != null)
             {
+                GameActions.Print($"UseType: double clicking {item.Serial}", hue: 0x104, type: MessageType.System);
                 GameActions.DoubleClick(item.Serial);
-                return true;
             }
-            else return false;
+            else
+                throw new ScriptSyntaxError("item type not found");
+            return true;
         }
 
         private static bool UseObject(CommandExecution execution)
         {
+            // += UO Steam =========================================================================+
+            // |  - Item can be anywhere (equipped, floor or accessible containers)                 |
+            // |  - Use object works even on mobs and matches to a double click                     |
+            // +====================================================================================+
             var serial = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
-            GameActions.DoubleClick(serial);
+            var entity = CmdFindEntityBySerial(serial);
+            if (entity != null)
+            {
+                GameActions.Print($"UseObject: double clicking {entity.Serial}", hue: 0x104, type: MessageType.System);
+                GameActions.DoubleClick(entity.Serial);
+            }
+            else
+                throw new ScriptSyntaxError("item type not found");
             return true;
         }
 
         private static bool UseOnce(CommandExecution execution)
         {
+            // += UO Steam =========================================================================+
+            // |  - Serial has to be an item, Mobiles are ignored                                   |
+            // |  - Use once requires item to be in the backpack (floor or equipped is ignored)     |
+            // +====================================================================================+
             Item item = CmdFindItemByGraphic(
                 execution.ArgList.NextAs<ushort>(ArgumentList.Expectation.Mandatory),
-                execution.ArgList.NextAs<ushort>()
-                );
+                execution.ArgList.NextAs<ushort>(),
+                World.Player.FindItemByLayer(Layer.Backpack)
+            );
 
             if (item != null)
             {
+                GameActions.Print($"UseOnce: double clicking {item.Serial}", hue: 0x104, type: MessageType.System);
                 GameActions.DoubleClick(item.Serial);
-                return true;
             }
-            else return false;
+            else
+                throw new ScriptSyntaxError("item type not found");
+            return true;
         }
 
+        private static uint MoveItem_Item = 0;
+        private static uint MoveItem_Destination = 0;
         private static bool MoveItem(CommandExecution execution)
         {
-            var serial = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
-            var destination = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
-            var x = execution.ArgList.NextAs<int>();
-            var y = execution.ArgList.NextAs<int>();
-            var z = execution.ArgList.NextAs<int>();
-            var amount = execution.ArgList.NextAs<int>();
-
-            if (destination == 0 || destination == uint.MaxValue)
+            // += UO Steam =========================================================================+
+            // |  - If already holding an item, it will move item in hand to destination            |
+            // |  - Ground is ignored as a destination                                              |
+            // +====================================================================================+
+            Interpreter.Timeout(5000, () => {
+                MoveItem_Item = 0;
+                MoveItem_Destination = 0;
+                GameActions.Print($"MoveItem: TIMEOUT", hue: 0x104, type: MessageType.System);
+                return true;
+            });
+            if (MoveItem_Item == 0)
             {
-                GameActions.Print("moveitem: destination not found");
-                return false;
+                var serial = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
+                var entity = CmdFindEntityBySerial(serial);
+                if (entity == null)
+                {
+                    throw new ScriptSyntaxError("item not found");
+                }
+
+                var destination = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
+                if (destination == 0)
+                {
+                    throw new ScriptSyntaxError("destination not found");
+                }
+                else if (destination == uint.MaxValue)
+                {
+                    Interpreter.ClearTimeout();
+                    return true;
+                }
+
+                if (ItemHold.Enabled)
+                {
+                    GameActions.DropItem(ItemHold.Serial, ItemHold.X, ItemHold.Y, ItemHold.Z, destination);
+                    throw new ScriptSyntaxError("You are already holding an item");
+                }
+                else
+                {            
+                    //var x = execution.ArgList.NextAs<int>();
+                    //var y = execution.ArgList.NextAs<int>();
+                    //var z = execution.ArgList.NextAs<int>();
+                    var amount = execution.ArgList.NextAs<int>();
+
+                    MoveItem_Item = serial;
+                    MoveItem_Destination = destination;
+                    GameActions.Print($"MoveItem: Picking up {serial}", hue: 0x104, type: MessageType.System);
+                    GameActions.PickUp(serial, 0, 0, amount); 
+                }
             }
             else
             {
-                GameActions.PickUp(serial, 0, 0, amount);
-                GameActions.DropItem(serial, 0xFFFF, 0xFFFF, 0, destination);
+                if (ItemHold.Enabled)
+                {
+                    GameActions.Print($"MoveItem: Drop {MoveItem_Item} in {MoveItem_Destination}", hue: 0x104, type: MessageType.System);
+                    GameActions.DropItem(MoveItem_Item, 0xFFFF, 0xFFFF, 0, MoveItem_Destination);
+                }
+                else if (CmdFindEntityBySerial(MoveItem_Item, source: MoveItem_Destination) != null)
+                {
+                    MoveItem_Item = 0;
+                    MoveItem_Destination = 0;
+                }        
+            }
+
+            if(MoveItem_Item == 0 && MoveItem_Destination == 0)
+            {
+                Interpreter.ClearTimeout();
                 return true;
             }
-           
+            else
+                return false;
         }
 
+        private static uint MoveItemOffset_Item = 0;
+        private static uint MoveItemOffset_Destination = 0;
         private static bool MoveItemOffset(CommandExecution execution)
         {
-            var serial = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
-            var destination = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
-            if(destination != uint.MaxValue) // GROUND is already defined as MaxValue for a unsigned int inside the GameActions class (for example in the DropItem method)
+            // += UO Steam =========================================================================+
+            // |  - If already holding an item, it will move item in hand to destination            |
+            // +====================================================================================+
+            Interpreter.Timeout(5000, () => {
+                MoveItemOffset_Item = 0;
+                MoveItemOffset_Destination = 0;
+                GameActions.Print($"MoveItemOffset: TIMEOUT", hue: 0x104, type: MessageType.System);
+                return true;
+            });
+            if (MoveItemOffset_Item == 0)
             {
-                throw new ScriptSyntaxError("ops", null);
+                var serial = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
+                var entity = CmdFindEntityBySerial(serial);
+                if (entity == null)
+                {
+                    throw new ScriptSyntaxError("item not found");
+                }
+
+                var destination = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
+                if (destination == 0)
+                {
+                    throw new ScriptSyntaxError("destination not found");
+                }
+
+                if (ItemHold.Enabled)
+                {
+                    GameActions.DropItem(ItemHold.Serial, ItemHold.X, ItemHold.Y, ItemHold.Z, destination);
+                    throw new ScriptSyntaxError("You are already holding an item");
+                }
+                else
+                {
+                    //var x = execution.ArgList.NextAs<int>();
+                    //var y = execution.ArgList.NextAs<int>();
+                    //var z = execution.ArgList.NextAs<int>();
+                    var amount = execution.ArgList.NextAs<int>();
+
+                    MoveItemOffset_Item = serial;
+                    MoveItemOffset_Destination = destination;
+                    GameActions.Print($"MoveItemOffset: Picking up {serial}", hue: 0x104, type: MessageType.System);
+                    GameActions.PickUp(serial, 0, 0, amount);
+                }
             }
-            var x = World.Player.X + execution.ArgList.NextAs<int>();
-            var y = World.Player.Y + execution.ArgList.NextAs<int>() + 1 /*adding temporary due to issue with my dev env*/;
-            var z = World.Map.GetTileZ(x, y) + execution.ArgList.NextAs<int>();
+            else
+            {
+                if (ItemHold.Enabled)
+                {
+                    GameActions.Print($"MoveItemOffset: Drop {MoveItemOffset_Item} in {MoveItemOffset_Destination}", hue: 0x104, type: MessageType.System);
+                    if (MoveItemOffset_Destination == uint.MaxValue)
+                    {
+                        var x = World.Player.X+1; // TODO: Remove +1
+                        var y = World.Player.Y;
+                        var z = World.Map.GetTileZ(World.Player.X, World.Player.Y);
+                        GameActions.DropItem(MoveItemOffset_Item, x, y, z, MoveItemOffset_Destination);
+                    }
+                    else
+                        GameActions.DropItem(MoveItemOffset_Item, 0xFFFF, 0xFFFF, 0, MoveItemOffset_Destination);
+                }
+                else if (CmdFindEntityBySerial(MoveItemOffset_Item, source: MoveItemOffset_Destination) != null)
+                {
+                    MoveItemOffset_Item = 0;
+                    MoveItemOffset_Destination = 0;
+                }
+            }
 
-            var amount = execution.ArgList.NextAs<int>();
-
-            GameActions.PickUp(serial, 0, 0, amount);
-            GameActions.DropItem(serial, x, y, z, destination);
-
-            return true;
+            if (MoveItemOffset_Item == 0 && MoveItemOffset_Destination == 0)
+            {
+                Interpreter.ClearTimeout();
+                return true;
+            }
+            else
+                return false;
         }
 
+        private static uint MoveType_Item = 0;
+        private static uint MoveType_Destination = 0;
         private static bool MoveType(CommandExecution execution)
         {
-            var graphic = execution.ArgList.NextAs<ushort>(ArgumentList.Expectation.Mandatory);
-            var source = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
-            var destination = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
-            var x = execution.ArgList.NextAs<int>();
-            var y = execution.ArgList.NextAs<int>();
-            var z = execution.ArgList.NextAs<int>();
-            var color = execution.ArgList.NextAs<ushort>();
-            var amount = execution.ArgList.NextAs<int>();
-            var range = execution.ArgList.NextAs<int>();
-
-            Item item = CmdFindItemByGraphic(graphic, color, source, amount, range);
-            if (item != null)
+            // += UO Steam =========================================================================+
+            // |  - Same behavior as MoveItem                                                       |
+            // +====================================================================================+
+            Interpreter.Timeout(5000, () => {
+                MoveType_Item = 0;
+                MoveType_Destination = 0;
+                GameActions.Print($"MoveType: TIMEOUT", hue: 0x104, type: MessageType.System);
+                return true;
+            });
+            if (MoveType_Item == 0)
             {
-                GameActions.PickUp(item.Serial, 0, 0, amount);
-                GameActions.DropItem(item.Serial, 0xFFFF, 0xFFFF, 0, destination);
+                var graphic = execution.ArgList.NextAs<ushort>(ArgumentList.Expectation.Mandatory);
+                var source = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
+
+                var destination = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
+                if (destination == 0)
+                {
+                    throw new ScriptSyntaxError("destination not found");
+                }
+                else if (destination == uint.MaxValue)
+                {
+                    Interpreter.ClearTimeout();
+                    return true;
+                }
+
+                var x = execution.ArgList.NextAs<int>();
+                var y = execution.ArgList.NextAs<int>();
+                var z = execution.ArgList.NextAs<int>();
+                var color = execution.ArgList.NextAs<ushort>();
+                var amount = execution.ArgList.NextAs<int>();
+                var range = execution.ArgList.NextAs<int>();
+
+                Item item = CmdFindItemByGraphic(graphic, color, source, amount, range);
+                if (item == null)
+                {
+                    throw new ScriptSyntaxError("item not found");
+                }
+                
+                if (ItemHold.Enabled)
+                {
+                    GameActions.DropItem(ItemHold.Serial, ItemHold.X, ItemHold.Y, ItemHold.Z, destination);
+                    throw new ScriptSyntaxError("You are already holding an item");
+                }
+                else
+                {
+                    MoveType_Item = item.Serial;
+                    MoveType_Destination = destination;
+                    GameActions.Print($"MoveType: Picking up {item.Serial}", hue: 0x104, type: MessageType.System);
+                    GameActions.PickUp(item.Serial, 0, 0, amount);
+                }
             }
-            return true;
+            else
+            {
+                if (ItemHold.Enabled)
+                {
+                    GameActions.Print($"MoveType: Drop {MoveType_Item} in {MoveType_Destination}", hue: 0x104, type: MessageType.System);
+                    GameActions.DropItem(MoveType_Item, 0xFFFF, 0xFFFF, 0, MoveType_Destination);
+                }
+                else if (CmdFindEntityBySerial(MoveType_Item, source: MoveType_Destination) != null)
+                {
+                    MoveType_Item = 0;
+                    MoveType_Destination = 0;
+                }
+            }
+
+            if (MoveType_Item == 0 && MoveType_Destination == 0)
+            {
+                Interpreter.ClearTimeout();
+                return true;
+            }
+            else
+                return false;
+
+            //var graphic = execution.ArgList.NextAs<ushort>(ArgumentList.Expectation.Mandatory);
+            //var source = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
+            //var destination = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
+            //var x = execution.ArgList.NextAs<int>();
+            //var y = execution.ArgList.NextAs<int>();
+            //var z = execution.ArgList.NextAs<int>();
+            //var color = execution.ArgList.NextAs<ushort>();
+            //var amount = execution.ArgList.NextAs<int>();
+            //var range = execution.ArgList.NextAs<int>();
+
+            //Item item = CmdFindItemByGraphic(graphic, color, source, amount, range);
+            //if (item != null)
+            //{
+            //    GameActions.PickUp(item.Serial, 0, 0, amount);
+            //    GameActions.DropItem(item.Serial, 0xFFFF, 0xFFFF, 0, destination);
+            //}
+            //return true;
         }
 
         private static bool MoveTypeOffset(CommandExecution execution)
@@ -605,7 +931,7 @@ namespace ClassicUO.Game.Scripting
                     // So queue it again with one less arg in the list
                     VirtualArgument arg = new VirtualArgument(dirArray[i]);
                     ArgumentList newParams = new ArgumentList(new Argument[1] { arg }, execution.Cmd.ArgTypes);
-                    Command.Queues[execution.Cmd.Attribute].Enqueue(new CommandExecution(execution.Cmd, newParams, execution.Quiet, execution.Force));
+                    //Command.Queues[execution.Cmd.Attribute].Enqueue(new CommandExecution(execution.Cmd, newParams, execution.Quiet, execution.Force));
                 }
 
                 return true;
@@ -674,13 +1000,63 @@ namespace ClassicUO.Game.Scripting
             return true;
         }
 
+        private static uint EquipItem_item = 0;
+        private static Layer EquipItem_layer = Layer.Invalid;
         public static bool EquipItem(CommandExecution execution)
         {
-            var item = World.GetOrCreateItem(execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory));
-            GameActions.PickUp(item, 0, 0, 1);
-            // We could make the layer parameter optimal, allowing us to just call GameActions.Equip (but this would be different from UO Steam)
-            GameActions.Equip((Layer)execution.ArgList.NextAs<int>(ArgumentList.Expectation.Mandatory));
-            return true;
+            // READY - Delete after review
+            // ----------------------------------  UO Steam  --------------------------------------
+            //   Never fails.
+            //   It returns Usage in white if arguments are invalid
+            //   If item already in hand it auto-drops saying: "You are already holding an item"
+            //   BLOCK UNTIL ACTION FINISHES
+            // ------------------------------------------------------------------------------------
+            Interpreter.Timeout(5000, () => {
+                EquipItem_item = 0;
+                EquipItem_layer = Layer.Invalid;
+                GameActions.Print($"EquipItem: TIMEOUT", hue: 0x104, type: MessageType.System);
+                return true;
+            });
+            if (EquipItem_item == 0) // Pick up the item (locking it on cursor)
+            {
+                if (ItemHold.Enabled)
+                {
+                    GameActions.Print($"You are already holding an item", type: MessageType.Command);
+                    GameActions.DropItem(ItemHold.Serial, ItemHold.X, ItemHold.Y, ItemHold.Z, ItemHold.Container);
+                    Interpreter.ClearTimeout();
+                    return true;
+                }
+
+                var item = World.Get(execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory));
+                if (item == null)
+                    throw new ScriptRunTimeError(null, "item not found");
+
+                EquipItem_layer = (Layer)execution.ArgList.NextAs<int>();
+                if (EquipItem_layer == Layer.Invalid)
+                    EquipItem_layer = (Layer)ItemHold.ItemData.Layer;
+
+                EquipItem_item = item.Serial;
+                GameActions.PickUp(item, 0, 0, 1);
+                GameActions.Print($"EquipItem: Picking up {EquipItem_item}", hue: 0x104, type: MessageType.System);
+            }
+            else if(EquipItem_layer != Layer.Invalid && ItemHold.Enabled) // Equip
+            {
+                // Equip item with given layer
+                EquipItem_item = ItemHold.Serial;
+                GameActions.Equip(EquipItem_layer);
+                GameActions.Print($"EquipItem: Equipping up {EquipItem_item}", hue: 0x104, type: MessageType.System);
+            }
+            else if(World.Player.FindItemByLayer(EquipItem_layer)?.Serial == EquipItem_item)
+            {
+                // Is item finally equipped?
+                GameActions.Print($"EquipItem: Equipped {EquipItem_item}", hue: 0x104, type: MessageType.System);
+                EquipItem_item = 0;
+                EquipItem_layer = Layer.Invalid;
+                Interpreter.ClearTimeout();
+                return true;
+            }
+
+            return false;
         }
 
         public static bool ToggleMounted(CommandExecution execution)
@@ -695,10 +1071,114 @@ namespace ClassicUO.Game.Scripting
                 // UOStream - behavior is prompting for mount if not found and requiring command to eb called again for mount to occur
                 VirtualArgument promptArg = new VirtualArgument("mount");
                 ArgumentList promptParams = new ArgumentList(new Argument[1] { promptArg }, Definitions["promptalias"].ArgTypes);
-                Command.Queues[execution.Cmd.Attribute].Enqueue((new CommandExecution(Definitions["promptalias"], promptParams, execution.Quiet, execution.Force)));
+                //Command.Queues[execution.Cmd.Attribute].Enqueue((new CommandExecution(Definitions["promptalias"], promptParams, execution.Quiet, execution.Force)));
             }
 
             GameActions.DoubleClick(serial);
+            return true;
+        }
+
+        public static bool EquipWand(CommandExecution execution)
+        {
+            // TODO This should be a system list available via script...
+            ushort[] wandGraphicIds = new ushort[] { 0xDF2 };
+
+            // Find all wands based on gaphic
+            List<Item> allWands = FindAllByGraphic(wandGraphicIds);
+            foreach(Item wand in allWands)
+            {
+                GameActions.SingleClick(wand.Serial);
+                //wand.TextContainer.
+                // TODO: As Jaedan mentioned the ItemProperties may not be available in UOO, waiting to sync with him
+                // But after processing the propertyes we select one of the wands and call Equip
+                //EquipItem(execution);
+            }
+
+            return true;
+        }
+
+        public static bool Dress(CommandExecution execution)
+        {
+            // Check if profile is supported
+            var profile = execution.ArgList.NextAs<string>();
+            if(profile == string.Empty)
+                profile = "dressconfig-temporary";
+            else if(!Profiles.ContainsKey(profile))
+            {
+                GameActions.Print($"dress: profile '{profile}' doesn't exist", type: MessageType.System);
+                return false;
+            }
+
+            // Dress items in profile
+            foreach(var serial in Profiles[profile])
+            {
+                var item = World.GetOrCreateItem(serial);
+                if (item.Layer != item.StaticLayer && (Layer)item.ItemData.Layer != Layer.Invalid) // not equipped and valid
+                {
+                    // UOStream - behavior is queing a request to move each item
+                    ArgumentList promptParams = new ArgumentList(new Argument[1] { new VirtualArgument($"0x{serial.ToString("X")}") }, Definitions["equipitem"].ArgTypes);
+                    //Command.Queues[Definitions["equipitem"].Attribute].Enqueue((new CommandExecution(Definitions["equipitem"], promptParams, execution.Quiet, execution.Force)));
+
+                    //ArgumentList promptParams = new ArgumentList(new Argument[2] { new VirtualArgument($"0x{serial.ToString("X")}"), new VirtualArgument($"0x{destintion.Serial.ToString("X")}") }, Definitions["equipitem"].ArgTypes);
+                    //Command.Queues[Definitions["moveitem"].Attribute].Enqueue((new CommandExecution(Definitions["EquipItem"], promptParams, execution.Quiet, execution.Force)));
+                }
+            }
+            return true;
+        }
+
+        public static bool Undress(CommandExecution execution)
+        {
+            var profile = execution.ArgList.NextAs<string>();
+            if (profile == string.Empty)
+            {
+                // UO Steam: Should undress all when no profile is provided
+                // So let's create a temporaty profile with current equiped items
+                profile = "temporary-generic";
+                Profiles[profile].Clear();
+                for (LinkedObject i = World.Player.Items; i != null; i = i.Next)
+                {
+                    Item it = (Item)i;
+                    // add it to the list if we found it
+                    if (it.AllowedToDraw && (it.ItemData.IsWearable || it.ItemData.IsWeapon) && it.Layer != Layer.Invalid && it.Layer != Layer.Backpack && it.Layer != Layer.Bank && it.Layer != Layer.Beard && it.Layer != Layer.Face &&
+                        it.Layer != Layer.Hair && it.Layer != Layer.Mount && it.Layer != Layer.ShopBuy && it.Layer != Layer.ShopBuyRestock && it.Layer != Layer.ShopSell)
+                    {
+                        Profiles[profile].Add(it.Serial);
+                    }
+                }  
+            }
+            else if(!Profiles.ContainsKey(profile))
+            {
+                // Check if provided profile is valid
+                GameActions.Print($"dress: profile '{profile}' doesn't exist", type: MessageType.System);
+                return false;
+            }
+
+            // Undress items in profile
+            var backpack = World.Player.FindItemByLayer(Layer.Backpack);
+            foreach (var serial in Profiles[profile])
+            {
+                // UOStream - behavior is queing a request to move each item
+                ArgumentList promptParams = new ArgumentList(new Argument[2] { new VirtualArgument($"0x{serial.ToString("X")}"), new VirtualArgument("backpack") }, Definitions["moveitem"].ArgTypes);
+                //Command.Queues[Definitions["moveitem"].Attribute].Enqueue((new CommandExecution(Definitions["moveitem"], promptParams, execution.Quiet, execution.Force)));
+            }
+            return true;
+        }
+
+        public static bool Dressconfig(CommandExecution execution)
+        {
+            // Set current equipped items in temporary dressing profile
+            var profile = "dressconfig-temporary";
+            Profiles[profile].Clear();
+            for (LinkedObject i = World.Player.Items; i != null; i = i.Next)
+            {
+                Item it = (Item)i;
+                // add it to the list if we found it
+                if (it.AllowedToDraw && (it.ItemData.IsWearable || it.ItemData.IsWeapon) && it.Layer != Layer.Invalid && it.Layer != Layer.Backpack && it.Layer != Layer.Bank && it.Layer != Layer.Beard && it.Layer != Layer.Face &&
+                    it.Layer != Layer.Hair && it.Layer != Layer.Mount && it.Layer != Layer.ShopBuy && it.Layer != Layer.ShopBuyRestock && it.Layer != Layer.ShopSell)
+                {
+                    Profiles[profile].Add(it.Serial);
+                }
+            }
             return true;
         }
 
@@ -853,111 +1333,170 @@ namespace ClassicUO.Game.Scripting
                     TargetManager.LastTargetInfo.Serial
                     );
                 Interpreter.Unpause();
-            });
-           
-
-            //if (!_hasPrompt)
-            //{
-            //    _hasPrompt = true;
-            //    Targeting.OneTimeTarget((location, serial, p, gfxid) =>
-            //    {
-                    
-            //    });
-            //    return false;
-            //}
-
-            //_hasPrompt = false;
+            });        
             return true;
         }
 
-        //private static bool UnimplementedCommand(string command, ParameterList args)
-        //{
-        //    GameActions.Print($"Unimplemented command: '{command}'", type: MessageType.System);
-        //    return true;
-        //}
+        private static bool FindAlias(CommandExecution execution)
+        {
+            var alias = execution.ArgList.NextAs<string>(ArgumentList.Expectation.Mandatory);
+            uint value = 0;
+            return Aliases.Read<uint>(alias, ref value);
+        }
 
-        //private static bool Deprecated(string command, ParameterList args)
-        //{
-        //    GameActions.Print($"Deprecated command: '{command}'", type: MessageType.System);
-        //    return true;
-        //}
+        private static bool WaitForGump(CommandExecution execution)
+        {
+            var gumpid = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory); // GumpID is also a serial
+            var timeout = execution.ArgList.NextAs<int>(ArgumentList.Expectation.Mandatory); // Timeout in ms
 
+            Interpreter.Pause(60000);
+            Task.Run(() =>
+            {
+                // Take a snapshot of all existing gumps
+                var gumpsSnapshot = UIManager.Gumps.ToArray();
 
+                DateTime startTime = DateTime.UtcNow;
+                while (DateTime.UtcNow - startTime < TimeSpan.FromMilliseconds(timeout))
+                {
+                    if (gumpid == 0 /*Zero value is Any*/) // any new gump was added
+                    {
+                        // For each existing gump
+                        for (LinkedListNode<Gump> first = UIManager.Gumps.First; first != null; first = first.Next)
+                        {
+                            // If its new (does not exist in snapshot)
+                            if(!gumpsSnapshot.Contains(first.Value))
+                            {
+                                // Stop waiting if its in an interactable state
+                                if (first.Value.IsModal || first.Value.IsVisible || first.Value.IsEnabled)
+                                {
+                                    Interpreter.Unpause();
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        var specificGump = UIManager.GetGump(gumpid);
+                        // Requested gump exists and is visible
+                        if (specificGump != null && (specificGump.IsModal && !specificGump.IsModal || !specificGump.IsVisible || !specificGump.IsEnabled))
+                        {
+                            Interpreter.Unpause();
+                            return;
+                        }
+                        return;  
+                    }
 
-        ////private static bool ExpFindObject(string expression, ParameterList args, bool quiet)
-        ////{
-        ////    return FindObject(expression, args);
-        ////}
+                    Thread.Sleep(25); // keep iteration
+                }
+                Interpreter.Unpause();
+            });
+            return true;
+        }
 
+        private static bool ClickScreen(CommandExecution execution)
+        {
+            // Read command arguments
+            var mouseX = execution.ArgList.NextAs<int>(ArgumentList.Expectation.Mandatory);
+            var mouseY = execution.ArgList.NextAs<int>(ArgumentList.Expectation.Mandatory);
+            Mouse.Position.X = mouseX;
+            Mouse.Position.Y = mouseY;
+            var clickType = execution.ArgList.NextAs<string>();
+            MouseButtonType buttonType = MouseButtonType.Left;
+            if (execution.ArgList.NextAs<string>() == "right")
+                buttonType = MouseButtonType.Right;
 
+            // STOP - can we use DelayedObjectClickManager.Set(ent.Serial, Mouse.Position.X, Mouse.Position.Y, Time.Ticks + Mouse.MOUSE_DELAY_DOUBLE_CLICK); ????????????
 
-        ////private static bool UseItem(Item cont, ushort find)
-        ////{
-        ////    for (int i = 0; i < cont.Contains.Count; i++)
-        ////    {
-        ////        Item item = cont.Contains[i];
+            // Get scene and inject mouse down logic
+            GameScene gs = Client.Game.GetScene<GameScene>();
+            if (clickType == string.Empty || clickType == "single")
+            {
+                UIManager.OnMouseButtonDown(buttonType);
+                gs.OnMouseDown(buttonType);
+            }
+            else
+            {
+                UIManager.OnMouseDoubleClick(buttonType);
+                gs.OnMouseDoubleClick(buttonType);
+            }
 
-        ////        if (item.ItemID == find)
-        ////        {
-        ////            PlayerData.DoubleClick(item);
-        ////            return true;
-        ////        }
-        ////        else if (item.Contains != null && item.Contains.Count > 0)
-        ////        {
-        ////            if (UseItem(item, find))
-        ////                return true;
-        ////        }
-        ////    }
+            // Because mouse  logic is nested with draw logic, we need to force for the game to darw
+            Interpreter.Pause(60000);
+            Task.Run(() =>
+             {
+                 Mouse.Position.X = mouseX;
+                 Mouse.Position.Y = mouseY;
+                 Mouse.ButtonRelease(buttonType);
+                 UIManager.OnMouseButtonUp(buttonType);
+                 gs.OnMouseUp(buttonType);
+                 Mouse.Update(); // reset mouse with real inout
+                 Thread.Sleep(100); // keep iteration (next frame?)
+                 Interpreter.Unpause();
+             });
+            return true;
+        }
 
-        ////    return false;
-        ////}
+        private static bool WaitForTarget(CommandExecution execution)
+        {
+            Interpreter.Timeout(execution.ArgList.NextAs<int>(ArgumentList.Expectation.Mandatory), () => { return true; });
+            if (TargetManager.IsTargeting)
+            {
+                Interpreter.ClearTimeout();
+                return true;
+            }
+            else return false;
+            //return !TargetManager.IsTargeting;
 
+            //var timeout = execution.ArgList.NextAs<int>(ArgumentList.Expectation.Mandatory);
 
+            //Interpreter.Pause(timeout);
+            //Task.Run(() =>
+            //{
+            //    // Take a snapshot of all existing gumps
+            //    var gumpsSnapshot = UIManager.Gumps.ToArray();
 
+            //    DateTime startTime = DateTime.UtcNow;
+            //    while (DateTime.UtcNow - startTime < TimeSpan.FromMilliseconds(timeout))
+            //    {
+            //        if (TargetManager.IsTargeting)
+            //            break;
+            //        else
+            //            Thread.Sleep(25); // keep iteration
+            //    }
+            //    Interpreter.Unpause();
+            //});
 
+            //return true;
+        }
 
-        ////private static bool PromptAlias(string command, ParameterList args)
-        ////{
-        ////    Interpreter.Pause(60000);
+        private static int Pause_Time = 0;
+        private static bool Pause(CommandExecution execution)
+        {
+            // READY - Delete after review
+            // ----------------------------------  UO Steam  --------------------------------------
+            //   Never fails.
+            // ------------------------------------------------------------------------------------
+            if (Pause_Time == 0)
+            {
+                Pause_Time = execution.ArgList.NextAs<int>(ArgumentList.Expectation.Mandatory);
+                Interpreter.Timeout(Pause_Time, () =>
+                {
+                    GameActions.Print($"Pause: END", hue: 0x104, type: MessageType.System);
+                    Pause_Time = 0;
+                    return true;
+                });
+                GameActions.Print($"Pause: START", hue: 0x104, type: MessageType.System);
+            }
+            return false;
+        }
 
-        ////    if (!_hasPrompt)
-        ////    {
-        ////        _hasPrompt = true;
-        ////        Targeting.OneTimeTarget((location, serial, p, gfxid) =>
-        ////        {
-        ////            Interpreter.SetAlias(args[0].As<string>(), serial);
-        ////            Interpreter.Unpause();
-        ////        });
-        ////        return false;
-        ////    }
-
-        ////    _hasPrompt = false;
-        ////    return true;
-        ////}
-
-        ////private static bool WaitForGump(string command, ParameterList args)
-        ////{
-        ////    if (args.Length < 2)
-        ////        throw new RunTimeError(null, "Usage: waitforgump (gump id/'any') (timeout)");
-
-        ////    bool any = args[0].As<string>() == "any";
-
-        ////    if (any)
-        ////    {
-        ////        if (World.Player.HasGump || World.Player.HasCompressedGump)
-        ////            return true;
-        ////    }
-        ////    else
-        ////    {
-        ////        uint gumpId = args[0].AsSerial();
-
-        ////        if (World.Player.CurrentGumpI == gumpId)
-        ////            return true;
-        ////    }
-
-        ////    Interpreter.Timeout(args[1].AsUInt(), () => { return true; });
-        ////    return false;
-        ////}
+        private static bool ClickTarget(CommandExecution execution)
+        {
+            var serial = execution.ArgList.NextAs<uint>(ArgumentList.Expectation.Mandatory);
+            TargetManager.Target(serial);
+            return true;
+        }
 
         ////private static bool ClearJournal(string command, ParameterList args)
         ////{
@@ -987,14 +1526,7 @@ namespace ClassicUO.Game.Scripting
         ////    return true;
         ////}
 
-        //private static bool Pause(string command, ParameterList args)
-        //{
-        //    if (args.Length == 0)
-        //        throw new ScriptRunTimeError(null, "Usage: pause (timeout)");
 
-        //    Interpreter.Pause(args[0].As<uint>());
-        //    return true;
-        //}
 
         ////private static bool Ping(string command, ParameterList args)
         ////{
@@ -1063,18 +1595,6 @@ namespace ClassicUO.Game.Scripting
         //        throw new RunTimeError(null, "cast - spell name or number not valid");
 
         //    return true;
-        //}
-
-        //private static bool WaitForTarget(string command, ParameterList args)
-        //{
-        //    if (args.Length != 1)
-        //        throw new RunTimeError(null, "Usage: waitfortarget (timeout)");
-
-        //    if (Targeting.HasTarget)
-        //        return true;
-
-        //    Interpreter.Timeout(args[0].AsUInt(), () => { return true; });
-        //    return false;
         //}
 
         //private static bool CancelTarget(string command, ParameterList args)
@@ -1335,66 +1855,6 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //public static bool DressCommand(string command, ParameterList args)
-        //{
-        //    //we're using a named dresslist or a temporary dresslist?
-        //    if (args.Length == 0)
-        //    {
-        //        if (DressList._Temporary != null)
-        //            DressList._Temporary.Dress();
-        //        else if (!quiet)
-        //            throw new RunTimeError(null, "No dresslist specified and no temporary dressconfig present - usage: dress ['dresslist']");
-        //    }
-        //    else
-        //    {
-        //        var d = DressList.Find(args[0].As<string>());
-        //        if (d != null)
-        //            d.Dress();
-        //        else if (!quiet)
-        //            throw new RunTimeError(null, $"dresslist {args[0].As<string>()} not found");
-        //    }
-
-        //    return true;
-        //}
-
-        //public static bool UnDressCommand(string command, ParameterList args)
-        //{
-        //    //we're using a named dresslist or a temporary dresslist?
-        //    if (args.Length == 0)
-        //    {
-        //        if (DressList._Temporary != null)
-        //            DressList._Temporary.Undress();
-        //        else if (!quiet)
-        //            throw new RunTimeError(null, "No dresslist specified and no temporary dressconfig present - usage: undress ['dresslist']");
-        //    }
-        //    else
-        //    {
-        //        var d = DressList.Find(args[0].As<string>());
-        //        if (d != null)
-        //            d.Undress();
-        //        else if (!quiet)
-        //            throw new RunTimeError(null, $"dresslist {args[0].As<string>()} not found");
-        //    }
-
-        //    return true;
-        //}
-
-        //public static bool DressConfig(string command, ParameterList args)
-        //{
-        //    if (DressList._Temporary == null)
-        //        DressList._Temporary = new DressList("dressconfig");
-
-        //    DressList._Temporary.Items.Clear();
-        //    for (int i = 0; i < World.Player.Contains.Count; i++)
-        //    {
-        //        Item item = World.Player.Contains[i];
-        //        if (item.Layer <= Layer.LastUserValid && item.Layer != Layer.Backpack && item.Layer != Layer.Hair &&
-        //            item.Layer != Layer.FacialHair)
-        //            DressList._Temporary.Items.Add(item.Serial);
-        //    }
-
-        //    return true;
-        //}
 
         //private static bool SetTimer(string command, ParameterList args)
         //{
@@ -1425,6 +1885,12 @@ namespace ClassicUO.Game.Scripting
         //}
 
         // HELPER FUNCTIONS FOR THE COMMANDS
+
+        private static bool UnsupportedCmd(CommandExecution execution)
+        {
+            GameActions.Print($"Command '{execution.Cmd.Keyword}' is not supported in UO Outlands", type: MessageType.System);
+            return false;
+        }
 
         private static Entity CmdFindEntityBySerial(uint serial, ushort color = ushort.MaxValue, uint source = 0, int amount = 0, int range = 0)
         {
@@ -1465,7 +1931,7 @@ namespace ClassicUO.Game.Scripting
             if (source == 0 /*Zero value is Any*/)
             {
                 item = World.Player.FindItem(graphic, color);
-                if (item != null) // For Any, also look at the ground if not found in player belongings
+                if (item == null) // For Any, also look at the ground if not found in player belongings
                     item = World.Player.FindItemByTypeOnGroundWithHueInRange(graphic, color, range);
             }
             else if (source == uint.MaxValue /*Max value is Ground*/)
@@ -1483,9 +1949,9 @@ namespace ClassicUO.Game.Scripting
         }
 
         // Wait for a given amount of milliseconds (using "curry" technique for param reduction)
-        public static Command.Handler WaitForMs(int waitTime)
+        public static Command.Handler WaitForMs(int waitTime = 300)
         {
-            return (execution) => { return (execution.CreationTime - DateTime.Now > TimeSpan.FromMilliseconds(waitTime)); };
+            return (execution) => { return (Time.Ticks - execution.LastChecked > waitTime); };
         }
 
         public static bool WaitForMovement(CommandExecution execution)
@@ -1499,7 +1965,36 @@ namespace ClassicUO.Game.Scripting
             else if (execution.Cmd.Keyword == "turn")
                 movementDelay = Constants.TURN_DELAY * 2.0;              // turn default delay
 
-            return ((DateTime.UtcNow - CommandExecution.LastExecuted(execution.Cmd.Keyword)).TotalMilliseconds > movementDelay);
+            return (Time.Ticks - execution.LastChecked > movementDelay);
+        }
+
+        private static List<Item> FindAllByGraphic(ushort[] graphicIds, ushort color = 0xFFFF, LinkedObject link = null)
+        {
+            // If no link is provided, use Player items (ecursion starting points)
+            if(link == null)
+                link = World.Player.Items;
+
+            // Traverse all items in the link
+            List<Item> result = new List<Item>();            
+            foreach (ushort graphic in graphicIds)
+            {
+                for (LinkedObject i = link; i != null; i = i.Next)
+                {
+                    Item it = (Item)i;
+                    // add it to the list if we found it
+                    if (it.Graphic == graphic && it.Hue < color)
+                    {
+                        result.Add(it);
+                    }
+                    // And if a container keep recursion inside
+                    if (SerialHelper.IsValid(it.Container) && !it.IsEmpty)
+                    {
+                        result.AddRange(FindAllByGraphic(graphicIds, color, it.Items));
+                    }
+                }
+            }
+
+            return result;
         }
     }
 }

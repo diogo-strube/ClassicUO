@@ -36,6 +36,8 @@ namespace ClassicUO.Game.Scripting
         public static void Register()
         {
             Interpreter.RegisterExpressionHandler("findobject", ExpressionToCommand);
+            Interpreter.RegisterExpressionHandler("findalias", ExpressionToCommand);
+            Interpreter.RegisterExpressionHandler("findtype", ExpressionToCommand);
         }
 
         public static bool ExpressionToCommand(string expression, Argument[] args, bool quiet, bool force)

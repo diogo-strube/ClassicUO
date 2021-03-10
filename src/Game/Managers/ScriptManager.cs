@@ -231,13 +231,6 @@ namespace ClassicUO.Game.Managers
             {
                 // Execute script (parsing all nodes, executing what possible and queing majority of commands)
                 Interpreter.ExecuteScript();
-
-                // Keep processing all command 
-                foreach (var queue in Command.Queues)
-                {
-                    if(queue.Value.Count > 0 && queue.Value.Peek().Process())
-                        queue.Value.Dequeue();
-                }
             }
             catch (Exception ex)
             {

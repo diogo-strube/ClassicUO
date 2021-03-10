@@ -1,4 +1,5 @@
-﻿using System;
+﻿using ClassicUO.Game.Managers;
+using System;
 using System.Collections.Generic;
 using static ClassicUO.Game.Scripting.Interpreter;
 
@@ -13,12 +14,17 @@ namespace ClassicUO.Game.Scripting
             // Preregistered System Aliases
             Write<uint>("backpack", GetLayerSerial(Data.Layer.Backpack));
             Write<uint>("bank", GetLayerSerial(Data.Layer.Bank));
-            Write<uint>("mount", Mount);
-            Write<uint>("lefthand", GetHandSerial(IO.ItemExt_PaperdollAppearance.Left));
-            Write<uint>("righthand", GetHandSerial(IO.ItemExt_PaperdollAppearance.Right));
-
-            // Destination Aliases
+            Write<uint>("enemy", CurrentEnemy);
+            Write<uint>("friend", CurrentFriend);
             Write<uint>("ground", Ground);
+            Write<uint>("last", LastTarget);
+            Write<uint>("lasttarget", LastTarget);
+            Write<uint>("lastobject", LastObject);
+            Write<uint>("lefthand", GetHandSerial(IO.ItemExt_PaperdollAppearance.Left));
+            Write<uint>("mount", Mount);
+            Write<uint>("righthand", GetHandSerial(IO.ItemExt_PaperdollAppearance.Right));
+            Write<uint>("self", Self);
+            Write<uint>("any", Any);
         }
 
         // Registry of global aliases mapping a name to a value
@@ -120,6 +126,48 @@ namespace ClassicUO.Game.Scripting
         private static bool Ground(string alias, out uint value)
         {
             value = uint.MaxValue; // Ground is MaxValue and Any is Zero
+            return true;
+        }
+
+        private static bool CurrentEnemy(string alias, out uint value)
+        {
+            value = TargetManager.LastAttack;
+            return true;
+        }
+
+        private static bool CurrentFriend(string alias, out uint value)
+        {
+            // TODO: Current game logic has no support for friends
+            // We can add such logic in the TargetManager.
+            value = 0;
+            return true;
+        }
+
+        private static bool Self(string alias, out uint value)
+        {
+            value = World.Player.Serial;
+            return true;
+        }
+
+        private static bool LastTarget(string alias, out uint value)
+        {
+            value = TargetManager.LastTargetInfo.Serial;
+            return true;
+        }
+
+        private static bool LastObject(string alias, out uint value)
+        {
+            // TODO: Current game logic has no support for friends
+            // We can add such logic in the TargetManager.
+            value = 0;
+            return true;
+        }
+
+        private static bool Any(string alias, out uint value)
+        {
+            // TODO: Current game logic has no support for friends
+            // We can add such logic in the TargetManager.
+            value = 0;
             return true;
         }
     }

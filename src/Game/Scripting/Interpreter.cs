@@ -47,7 +47,7 @@ namespace ClassicUO.Game.Scripting
     // Script exception related to calling a command with the wrong syntax (most valuable to player and UI feedback)
     public class ScriptSyntaxError : ScriptRunTimeError
     {
-        public ScriptSyntaxError(string error, ScriptRunTimeError inner) : base(inner.Node, error, inner)
+        public ScriptSyntaxError(string error, ScriptRunTimeError inner = null) : base(inner?.Node, error, inner)
         {
         }
     }
