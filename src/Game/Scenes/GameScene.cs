@@ -41,6 +41,7 @@ using ClassicUO.Game.Managers;
 using ClassicUO.Game.UI.Controls;
 using ClassicUO.Game.UI.Gumps;
 using ClassicUO.Input;
+using ClassicUO.IO;
 using ClassicUO.IO.Resources;
 using ClassicUO.Network;
 using ClassicUO.Renderer;
@@ -100,6 +101,7 @@ namespace ClassicUO.Game.Scenes
         private uint _timeToPlaceMultiInHouseCustomization;
         private readonly bool _use_render_target = false;
         private UseItemQueue _useItemQueue = new UseItemQueue();
+        private DressQueue _dressQueue = new DressQueue();
         private bool _useObjectHandles;
         private Vector4 _vectorClear = new Vector4(Vector3.Zero, 1);
         private RenderTarget2D _world_render_target, _lightRenderTarget;
@@ -114,6 +116,7 @@ namespace ClassicUO.Game.Scenes
         public HotkeysManager Hotkeys { get; private set; }
 
         public MacroManager Macros { get; private set; }
+        public ScriptManager Scripts { get; private set; }
 
         public InfoBarManager InfoBars { get; private set; }
 
@@ -126,6 +129,11 @@ namespace ClassicUO.Game.Scenes
         public void DoubleClickDelayed(uint serial)
         {
             _useItemQueue.Add(serial);
+        }
+
+        public void QueueDressAction(Action dressAction)
+        {
+            _dressQueue.Add(dressAction);
         }
 
         public override void Load()
@@ -153,6 +161,9 @@ namespace ClassicUO.Game.Scenes
             // #########################################################
 
             Macros.Load();
+
+            Scripts = new ScriptManager();
+            Scripts.Load();
 
             InfoBars = new InfoBarManager();
             InfoBars.Load();
@@ -340,6 +351,7 @@ namespace ClassicUO.Game.Scenes
             ProfileManager.CurrentProfile?.Save(ProfileManager.ProfilePath);
 
             Macros.Save();
+            Scripts.Save();
             InfoBars.Save();
             ProfileManager.UnLoadProfile();
 
@@ -360,8 +372,13 @@ namespace ClassicUO.Game.Scenes
 
             _useItemQueue?.Clear();
             _useItemQueue = null;
+
+            _dressQueue?.Clear();
+            _dressQueue = null;
+
             Hotkeys = null;
             Macros = null;
+            Scripts = null;
             MessageManager.MessageReceived -= ChatOnMessageReceived;
 
 
@@ -713,6 +730,7 @@ namespace ClassicUO.Game.Scenes
             }
 
             Macros.Update();
+            Scripts.Update();
 
             if ((currentProfile.CorpseOpenOptions == 1 || currentProfile.CorpseOpenOptions == 3) && TargetManager.IsTargeting || (currentProfile.CorpseOpenOptions == 2 || currentProfile.CorpseOpenOptions == 3) && World.Player.IsHidden)
             {
@@ -720,6 +738,7 @@ namespace ClassicUO.Game.Scenes
             }
 
             _useItemQueue.Update(totalTime, frameTime);
+            _dressQueue.Update(totalTime, frameTime);
 
             if (!UIManager.IsMouseOverWorld)
             {

@@ -36,6 +36,7 @@ using ClassicUO.Data;
 using ClassicUO.Game.Data;
 using ClassicUO.Game.Managers;
 using ClassicUO.Game.UI.Gumps;
+using ClassicUO.IO;
 using ClassicUO.Network;
 using ClassicUO.Renderer;
 using static ClassicUO.Network.NetClient;
@@ -82,7 +83,7 @@ namespace ClassicUO.Game.GameObjects
 
         public byte HitsPercentage;
         public RenderedText HitsTexture;
-        public bool IsClicked;
+        public bool IsClicked, HitsRequested;
         public uint LastStepTime;
         public string Name;
         public uint Serial;
@@ -183,10 +184,7 @@ namespace ClassicUO.Game.GameObjects
         {
             base.Destroy();
 
-            if (HitsMax != 0)
-            {
-                GameActions.SendCloseStatus(Serial);
-            }
+            GameActions.SendCloseStatus(Serial, HitsRequested);
 
             AnimIndex = 0;
             LastAnimationChangeTime = 0;
@@ -276,6 +274,26 @@ namespace ClassicUO.Game.GameObjects
                         {
                             return res;
                         }
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Item FindItemByHand(ItemExt_PaperdollAppearance appearance)
+        {
+            for (LinkedObject i = Items; i != null; i = i.Next)
+            {
+                Item it = (Item)i;
+
+                if (!it.IsDestroyed && (it.Layer == Layer.HeldInHand1 || it.Layer == Layer.HeldInHand2))
+                {
+                    if (ItemDataExtensions.TryGetValue(it.Graphic, out var ext) && 
+                        ext.PaperdollAppearance == appearance)
+                    {
+                        return it;
                     }
                 }
             }

@@ -31,6 +31,7 @@
 #endregion
 
 using System;
+using System.Collections.Generic;
 using ClassicUO.Configuration;
 using ClassicUO.Data;
 using ClassicUO.Game.Data;
@@ -550,7 +551,156 @@ namespace ClassicUO.Game
             }
         }
 
+        static readonly Dictionary<IO.ItemExt_PaperdollAppearance, Item> _toggleEquipCache =
+            new Dictionary<IO.ItemExt_PaperdollAppearance, Item>();
+
+        public static void ToggleEquip(IO.ItemExt_PaperdollAppearance appearance)
+        {
+            Item cached;
+
+            _toggleEquipCache.TryGetValue(appearance, out cached);
+
+            if (cached != null)
+            {
+                cached = World.Get(cached.Serial) as Item;
+            }
+
+            var current = World.Player.FindItemByHand(appearance);
+
+            if (current != null && current != cached)
+            {
+                cached = current;
+                _toggleEquipCache[appearance] = cached;
+            }
+
+            if (cached == null)
+            {
+                return;
+            }
+
+            var currentLeft = World.Player.FindItemByHand(IO.ItemExt_PaperdollAppearance.Left);
+            var currentRight = World.Player.FindItemByHand(IO.ItemExt_PaperdollAppearance.Right);
+
+            if (currentLeft?.RequiredHands == IO.ItemExt_RequiredHands.Two)
+            {
+                Client.Game.GetScene<GameScene>().QueueDressAction(() => Unequip(currentLeft.Layer));
+            }
+            else if (currentRight?.RequiredHands == IO.ItemExt_RequiredHands.Two)
+            {
+                Client.Game.GetScene<GameScene>().QueueDressAction(() => Unequip(currentRight.Layer));
+            }
+            else if (cached?.RequiredHands == IO.ItemExt_RequiredHands.Two)
+            {
+                if (currentLeft != null)
+                {
+                    Client.Game.GetScene<GameScene>().QueueDressAction(() => Unequip(currentLeft.Layer));
+                }
+
+                if (currentRight != null)
+                {
+                    Client.Game.GetScene<GameScene>().QueueDressAction(() => Unequip(currentRight.Layer));
+                }
+            }
+
+            // conflict if equipping left hand shield while weilding a 2h right weapon
+            // conflict if equipping right hand 2h weapon if weilding a 1h left shield
+
+            if (current == null)
+            {
+                Client.Game.GetScene<GameScene>().QueueDressAction(() =>
+                {
+                    PickUp(cached, 0, 0, 1);
+                    ItemHold.Clear();
+                    ItemHold.Set(cached, cached.Amount);
+                    Equip();
+                });
+            }
+            else
+            {
+                Client.Game.GetScene<GameScene>().QueueDressAction(() =>
+                {
+                    Unequip(current.Layer);
+                });
+            }
+        }
+
+        static readonly HashSet<Item> _equipConflicts = new HashSet<Item>();
+
+        public static void Equip(Item item)
+        {
+            _equipConflicts.Clear();
+
+            if (item.Layer == item.StaticLayer) return; // already equipped
+
+            if (item.RequiredHands == IO.ItemExt_RequiredHands.Invalid)
+            {
+                var conflict = World.Player.FindItemByLayer(item.StaticLayer);
+
+                if (conflict != null)
+                {
+                    _equipConflicts.Add(conflict);
+                }
+            }
+            else if (item.RequiredHands == IO.ItemExt_RequiredHands.One)
+            {
+                var conflict = World.Player.FindItemByHand(item.PaperdollAppearance);
+
+                if (conflict != null)
+                {
+                    _equipConflicts.Add(conflict);
+                }
+
+                var otherHand = item.PaperdollAppearance == IO.ItemExt_PaperdollAppearance.Left
+                    ? IO.ItemExt_PaperdollAppearance.Right
+                    : IO.ItemExt_PaperdollAppearance.Left;
+
+                conflict = World.Player.FindItemByHand(otherHand);
+
+                if (conflict != null && conflict.RequiredHands == IO.ItemExt_RequiredHands.Two)
+                {
+                    _equipConflicts.Add(conflict);
+                }
+            }
+            else if (item.RequiredHands == IO.ItemExt_RequiredHands.Two)
+            {
+                var conflict = World.Player.FindItemByHand(IO.ItemExt_PaperdollAppearance.Left);
+
+                if (conflict != null)
+                {
+                    _equipConflicts.Add(conflict);
+                }
+
+                conflict = World.Player.FindItemByHand(IO.ItemExt_PaperdollAppearance.Right);
+
+                if (conflict != null)
+                {
+                    _equipConflicts.Add(conflict);
+                }
+            }
+
+            foreach (var conflict in _equipConflicts)
+            {
+                Client.Game.GetScene<GameScene>().QueueDressAction(() =>
+                {
+                    Unequip(conflict.Layer);
+                });
+            }
+
+            Client.Game.GetScene<GameScene>().QueueDressAction(() =>
+            {
+                PickUp(item, 0, 0, 1);
+                ItemHold.Clear();
+                ItemHold.Set(item, item.Amount);
+                Equip();
+            });
+        }
+
         public static void Equip(uint container = 0)
+        {
+            Equip((Layer)ItemHold.ItemData.Layer, container);
+        }
+
+        public static void Equip(Layer layer, uint container = 0)
         {
             if (ItemHold.Enabled && !ItemHold.IsFixedPosition && ItemHold.ItemData.IsWearable)
             {
@@ -559,7 +709,7 @@ namespace ClassicUO.Game
                     container = World.Player.Serial;
                 }
 
-                Socket.Send(new PEquipRequest(ItemHold.Serial, (Layer) ItemHold.ItemData.Layer, container));
+                Socket.Send(new PEquipRequest(ItemHold.Serial, layer, container));
 
                 ItemHold.Enabled = false;
                 ItemHold.Dropped = true;
@@ -601,21 +751,45 @@ namespace ClassicUO.Game
             Socket.Send(new PSkillsStatusChangeRequest(skillindex, lockstate));
         }
 
-        public static void RequestMobileStatus(uint serial)
+        public static void RequestMobileStatus(uint serial, bool force = false)
         {
-            //Mobile mob = World.Mobiles.Get(serial);
-            //if (mob != null)
-            //{
-            //    mob.AddMessage(MessageType.Regular, "[PACKET REQUESTED]");
-            //}
-            Socket.Send(new PStatusRequest(serial));
+            if (World.InGame)
+            {
+                Entity ent = World.Get(serial);
+
+                if (ent != null && !ent.HitsRequested)
+                {
+                    ent.HitsRequested = true;
+                    force = true;
+                }
+
+                if (force && SerialHelper.IsValid(serial))
+                {
+                    //ent = ent ?? World.Player;
+                    //ent.AddMessage(MessageType.Regular, $"PACKET SENT: 0x{serial:X8}", 3, 0x34, true, TextType.OBJECT);
+                    Socket.Send(new PStatusRequest(serial));
+                }
+            }
         }
 
-        public static void SendCloseStatus(uint serial)
+        public static void SendCloseStatus(uint serial, bool force = false)
         {
-            if (Client.Version >= ClientVersion.CV_200)
+            if (Client.Version >= ClientVersion.CV_200 && World.InGame)
             {
-                Socket.Send(new PCloseStatusBarGump(serial));
+                Entity ent = World.Get(serial);
+
+                if (ent != null && ent.HitsRequested)
+                {
+                    ent.HitsRequested = false;
+                    force = true;
+                }
+
+                if (force && SerialHelper.IsValid(serial))
+                {
+                    //ent = ent ?? World.Player;
+                    //ent.AddMessage(MessageType.Regular, $"PACKET REMOVED SENT: 0x{serial:X8}", 3, 0x34 + 10, true, TextType.OBJECT);
+                    Socket.Send(new PCloseStatusBarGump(serial));
+                }
             }
         }
 
@@ -698,7 +872,41 @@ namespace ClassicUO.Game
             Socket.Send(new PTradeResponse(serial, 1, false));
         }
 
-        public static void AllNames()
+        public static void ClearEquipped(IO.ItemExt_PaperdollAppearance appearance)
+        {
+            var item = World.Player.FindItemByHand(appearance);
+
+            if (item != null)
+            {
+                var backpack = World.Player.FindItemByLayer(Layer.Backpack);
+
+                PickUp(item, 0, 0, 1);
+                DropItem(item, 0xFFFF, 0xFFFF, 0, backpack);
+            }
+
+            _toggleEquipCache[appearance] = null;
+        }
+
+        public static void Unequip(Layer layer)
+        {
+            var equippedItem = World.Player.FindItemByLayer(layer);
+
+            if (equippedItem == null) return;
+
+            var backpack = World.Player.FindItemByLayer(Layer.Backpack);
+
+            PickUp(equippedItem, 0, 0, 1);
+            DropItem(equippedItem, 0xFFFF, 0xFFFF, 0, backpack);
+        }
+
+        public enum AllNamesTargets
+        {
+            All,
+            Mobiles,
+            Corpses,
+        }
+
+        public static void AllMobileNames()
         {
             foreach (Mobile mobile in World.Mobiles)
             {
@@ -707,7 +915,10 @@ namespace ClassicUO.Game
                     Socket.Send(new PClickRequest(mobile));
                 }
             }
+        }
 
+        public static void AllCorpseNames()
+        {
             foreach (Item item in World.Items)
             {
                 if (item.IsCorpse)
@@ -715,6 +926,38 @@ namespace ClassicUO.Game
                     Socket.Send(new PClickRequest(item));
                 }
             }
+        }
+
+        public static void AllNames()
+        {
+            AllNames(AllNamesTargets.All);
+        }
+
+        public static void AllNames(AllNamesTargets targets)
+        {
+            switch (targets)
+            {
+                case AllNamesTargets.Mobiles:
+                    AllMobileNames();
+                    break;
+                case AllNamesTargets.Corpses:
+                    AllCorpseNames();
+                    break;
+                default:
+                    AllMobileNames();
+                    AllCorpseNames();
+                    break;
+            }
+        }
+
+        public static void RequestDisarm()
+        {
+            Socket.Send(new PDisarmRequest());
+        }
+
+        public static void RequestStun()
+        {
+            Socket.Send(new PStunRequest());
         }
 
         public static void OpenDoor()
@@ -777,6 +1020,11 @@ namespace ClassicUO.Game
             ability ^= (Ability) 0x80;
         }
 
+        public static void ClearAbility()
+        {
+            Socket.Send(new PUseCombatAbility(0));
+        }
+
         public static void QuestArrow(bool rightClick)
         {
             Socket.Send(new PClickQuestArrow(rightClick));
@@ -815,6 +1063,43 @@ namespace ClassicUO.Game
                 0,
                 bag
             );
+        }
+
+        public static void BandageSelf()
+        {
+            Item bandage = World.Player.FindBandage();
+
+            if (bandage != null)
+            {
+                Socket.Send(new PTargetSelectedObject(bandage.Serial, World.Player.Serial));
+            }
+        }
+
+        public static void UseLastSkill()
+        {
+            Socket.Send(new PUseSkill(LastSkillIndex));
+        }
+
+        public static bool UseSkill(string skillName)
+        {
+            int skillIndex = -1;
+
+            for (int i = 0; i < World.Player.Skills.Length; i++)
+            {
+                if (string.Compare(World.Player.Skills[i].Name, skillName, true) == 0)
+                {
+                    skillIndex = i;
+                    break;
+                }
+            }
+
+            if (skillIndex != -1)
+            {
+                UseSkill(skillIndex);
+                return true;
+            }
+
+            return false;
         }
     }
 }
