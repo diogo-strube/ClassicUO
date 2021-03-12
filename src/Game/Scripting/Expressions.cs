@@ -22,12 +22,7 @@
 #endregion
 
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using ClassicUO.Configuration;
-using ClassicUO.Game.Data;
-using ClassicUO.Game.GameObjects;
-using ClassicUO.Game.Managers;
+
 namespace ClassicUO.Game.Scripting
 {
     public static class Expressions
@@ -44,8 +39,8 @@ namespace ClassicUO.Game.Scripting
         {
             try
             {
-                var execution = Commands.Definitions[expression].CreateExecution(args, quiet, force);
-                return execution.Process();
+                var cmdHandler = Interpreter.GetCommandHandler(expression);
+                return cmdHandler(expression, args, quiet, force);
             }
             catch (Exception ex)
             {

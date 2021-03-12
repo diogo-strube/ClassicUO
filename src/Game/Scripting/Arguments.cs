@@ -1,11 +1,5 @@
-﻿using ClassicUO.Game.Data;
-using ClassicUO.Utility;
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Reflection;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace ClassicUO.Game.Scripting
 {
@@ -114,6 +108,7 @@ namespace ClassicUO.Game.Scripting
     }
 
     // Encapsulate AST arguments so that command specific definitions can be evaluated and more easly processed
+    // UOSTEAM: All returned strings are lower case, exatcly as UO Steam behavior. For example, alias "Scissors" is the same as "scissors"
     public class ArgumentList
     {
         // Code restricted to ArgumentList, and not in Aliases, as this is mapping value types beyond serial (color, source, etc)
@@ -129,16 +124,16 @@ namespace ClassicUO.Game.Scripting
         // Index used to organize traversal of arguments
         private int _index;
 
-        // Enumerates how the next arg should be read
-        public enum Expectation
-        {
-            Mandatory,
-            Optional,
-        }
+        // Number of arguments that are mandatory
+        private int _mandatory;
 
-        public ArgumentList(Argument[] args, string[] definitions)
+        public ArgumentList(Argument[] args, int mandatory, string[] definitions)
         {
+            if (args.Length < mandatory)
+                throw new ScriptSyntaxError("invalid number of arguments");
+
             _args = args;
+            _mandatory = mandatory;
             _definitions = definitions;
             _index = -1;
         }
@@ -157,8 +152,9 @@ namespace ClassicUO.Game.Scripting
             get { return _args.Length; }
         }
 
+
         // Generic method to read next argument in the list as the desired type T
-        public T NextAs<T>(Expectation type = Expectation.Optional)
+        public T NextAs<T>()
         {
             var value = default(T);
             if (_args.Length > _index + 1) // Could we read one more argument?
@@ -175,16 +171,16 @@ namespace ClassicUO.Game.Scripting
                     GetMappedValue<T>(_definitions[_index], value, ref value);
                 } 
             }
-            else if (type == Expectation.Optional && _definitions.Length > _index + 1) // Nop, but this is optional, so go with default
+            else if (_index + 1 >= _mandatory && _definitions.Length > _index + 1) // Nop, but this is optional, so go with default
                 value = GetDefault<T>(_definitions[++_index]);
-            else throw new ScriptRunTimeError(null, typeof(T).FullName + " argument does not exist at " + _index); // Otherwise.. kaboooom
+            else throw new ScriptSyntaxError(typeof(T).FullName + " argument does not exist at " + _index); // Otherwise.. kaboooom
 
             return value;
         }
 
         // Retrieve an arguments that contains and array of elements
         // Attention - inner values are not mapped to alias or local variables
-        public T[] NextAsArray<T>(Expectation type = Expectation.Optional)
+        public T[] NextAsArray<T>()
         {
             if (_args.Length > _index + 1)
             {
@@ -203,9 +199,9 @@ namespace ClassicUO.Game.Scripting
                 }
                 else return new T[1] { TypeConverter.To<T>(array[0]) };
             }
-            else if (type == Expectation.Optional)
+            else if (_index + 1 >= _mandatory) // optional
                 return new T[] { GetDefault<T>() }; // Return single element (Length == 1) for non existent optionals
-            else throw new ScriptRunTimeError(null, "List of " + typeof(T).FullName + " argument does not exist at " + _index);
+            else throw new ScriptSyntaxError("List of " + typeof(T).FullName + " argument does not exist at " + _index);
         }  
 
         public T GetDefault<T>(string localAlias = "")

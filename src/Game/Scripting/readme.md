@@ -15,12 +15,19 @@ While implementing the script commands we noticed some challenges to integrate i
 Our approach for integration and implementation, including the mentioned challenges, was to avoid changing any CUO class/logic outside the added Scripting source code, making sure avoid support efforts in this Outlands fork.
 
 
-## Design Overview
+## Implementation Overview
 
-* Any time related comparison uses ClassicUO.Time instead of .Net DateTime or TimeSpan.
-* Any String to Enum check or comparison uses Enum.Parse instead of a switch or if/else block.
-* Methods pptional arguments are heavly used to support script commands optional arguments.
-* For decreasing if/else chains, and as exceptions are already in use, methods have several exit points.
+### Code Standards
+
+The following code standards and approaches were used when developing the UO Steam feature:
+- Line limit set to 120.
+- A few tags are used in the source code to explain specifics about the implementation:
+  - UOSTEAM – describe implementation details done to match specific behavior in UO Steam. Therefore, changes may affect final desired behavior.
+  - ATTENTION - Highlight’s and explain parts of the code that may be complex or have a controversial approach.
+- Any time related comparison uses ClassicUO.Time instead of .Net DateTime or TimeSpan.
+- Any String to Enum check or comparison uses Enum.Parse instead of a switch or if/else block.
+- Methods optional arguments are heavly used to support script commands optional arguments.
+- Aiming to decrease if/else chains, and as Exceptions are already in use, methods have several exit points.
 
 ## TODO
-* Move all the GameActions.Print debugging calls to a Log method that can be enabled/disabled by the user in the Script UI.
+- Move all the GameActions.Print debugging calls to a Log method that can be enabled/disabled by the user in the Script UI.

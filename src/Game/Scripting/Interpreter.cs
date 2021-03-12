@@ -25,41 +25,10 @@ using System.Collections.Generic;
 using System.Globalization;
 using ClassicUO.Utility;
 using System.ComponentModel;
+using ClassicUO.Game.Data;
 
 namespace ClassicUO.Game.Scripting
 {
-    // Generic exception for the script functionality
-    public class ScriptRunTimeError : Exception
-    {
-        public ASTNode Node;
-
-        public ScriptRunTimeError(ASTNode node, string error) : base(error)
-        {
-            Node = node;
-        }
-
-        public ScriptRunTimeError(ASTNode node, string error, Exception inner) : base(error, inner)
-        {
-            Node = node;
-        }
-    }
-
-    // Script exception related to calling a command with the wrong syntax (most valuable to player and UI feedback)
-    public class ScriptSyntaxError : ScriptRunTimeError
-    {
-        public ScriptSyntaxError(string error, ScriptRunTimeError inner = null) : base(inner?.Node, error, inner)
-        {
-        }
-    }
-
-    // Script exception related to conversion issues between types, enums, dictionaries, etc
-    public class ScriptTypeConversionError : ScriptRunTimeError
-    {
-        public ScriptTypeConversionError(ASTNode node, string error) : base(node, error)
-        {
-        }
-    }
-
     internal static class TypeConverter
     {
         public static T To<T>(string token)
@@ -76,56 +45,6 @@ namespace ClassicUO.Game.Scripting
             }
             else throw new ScriptTypeConversionError(null, "Cannot convert argument to " + typeof(T).FullName);
         }
-
-        //public static uint ToUInt(string token)
-        //{
-        //    uint val;
-
-        //    if (token.StartsWith("0x"))
-        //    {
-        //        if (uint.TryParse(token.Substring(2), NumberStyles.HexNumber, Interpreter.Culture, out val))
-        //            return val;
-        //    }
-        //    else if (uint.TryParse(token, out val))
-        //        return val;
-
-        //    throw new ScriptTypeConversionError(null, "Cannot convert argument to uint");
-        //}
-
-        //public static ushort ToUShort(string token)
-        //{
-        //    ushort val;
-
-        //    if (token.StartsWith("0x"))
-        //    {
-        //        if (ushort.TryParse(token.Substring(2), NumberStyles.HexNumber, Interpreter.Culture, out val))
-        //            return val;
-        //    }
-        //    else if (ushort.TryParse(token, out val))
-        //        return val;
-
-        //    throw new ScriptTypeConversionError(null, "Cannot convert argument to ushort");
-        //}
-
-        //public static double ToDouble(string token)
-        //{
-        //    double val;
-
-        //    if (double.TryParse(token, out val))
-        //        return val;
-
-        //    throw new ScriptTypeConversionError(null, "Cannot convert argument to double");
-        //}
-
-        //public static bool ToBool(string token)
-        //{
-        //    bool val;
-
-        //    if (bool.TryParse(token, out val))
-        //        return val;
-
-        //    throw new ScriptTypeConversionError(null, "Cannot convert argument to bool");
-        //}
     }
 
     internal class Scope
@@ -765,7 +684,12 @@ namespace ClassicUO.Game.Scripting
                 var handler = Interpreter.GetCommandHandler(node.Lexeme);
 
                 if (handler == null)
-                    throw new ScriptRunTimeError(node, "Command is not defined");
+                {
+                    // UOSTEAM: just print msg and stop execution of script when a command does not exist
+                    GameActions.Print($"Command '{node.Lexeme}' doesn't exist", hue: 0x104, type: MessageType.System);
+                    Interpreter.StopScript();
+                    return false;
+                }
 
                 var cont = handler(node.Lexeme, ConstructArgumentList(ref node), quiet, force);
 
@@ -778,8 +702,8 @@ namespace ClassicUO.Game.Scripting
             }
             catch(ScriptRunTimeError ex)
             {
-                // If quiete consume script related error to ignore it
-                if(!quiet)
+                // UOSTEAM: If quiet nodifier is enabled, consume script related error to ignore it
+                if (!quiet)
                     throw ex;
                 return false;
             }  
