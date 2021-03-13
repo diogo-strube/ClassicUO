@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 
 namespace ClassicUO.Game.Scripting
 {
+    //ATTENTION: class only created because of issues when trying to guarantee behavior using GameActions.cs functionality
     internal static class OperationMoveItem
     {
         public struct MovingItem
@@ -33,9 +34,18 @@ namespace ClassicUO.Game.Scripting
         public enum State
         {
             NotMoving,
-            Moving,
+            Moving
         }
         public static State CurrentState = State.NotMoving;
+
+        public static State MoveItem()
+        {
+            if(CurrentState != State.NotMoving)
+            {
+                MoveItem(CurrentItem.Serial, CurrentItem.Destination, CurrentItem.OffsetX, CurrentItem.OffsetY, CurrentItem.OffsetZ, CurrentItem.Amount);
+            }
+            return CurrentState;
+        }
 
         public static State MoveItem(uint serial, uint destination, int offsetX = 0xFFFF, int offsetY = 0xFFFF, int offsetZ = 0, int amount = 1)
         {
@@ -62,13 +72,13 @@ namespace ClassicUO.Game.Scripting
                         });
 
                         CurrentItem = new MovingItem(serial, destination, offsetX, offsetY, offsetZ, amount);
-                        Commands.DebugMsg($"Moving {serial}");
+                        Commands.DebugMsg($"Moving {serial} to {CurrentItem.Destination}");
                         GameActions.PickUp(CurrentItem.Serial, 0, 0, CurrentItem.Amount);
                         GameActions.DropItem(CurrentItem.Serial, CurrentItem.OffsetX, CurrentItem.OffsetY, CurrentItem.OffsetZ, CurrentItem.Destination);
                         CurrentState = State.Moving;
                     }
                     break;
-                case State.Moving: // If already moving, lets wait for the item to be in the destination
+                case State.Moving: // lets wait for the item to be in the destination
                     if (Commands.CmdFindEntityBySerial(CurrentItem.Serial, source: CurrentItem.Destination) != null)
                     {
                         Interpreter.ClearTimeout();

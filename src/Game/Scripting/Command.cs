@@ -5,6 +5,14 @@ using System.Linq;
 
 namespace ClassicUO.Game.Scripting
 {
+    // Defines the group a command i s part of based on performed actions
+    public enum CommandGroup
+    {
+        None,   // This command has no blocking or time controlled operation
+        PickUp, // This command will be performing a PickUp operation
+        DClick  // This command will be performing a DClick operation
+    }
+
     // Loosely typed abstraction of a UO Steam command
     // Class relies on delegates and static members for allowing implementation of commands as static methods instead of polymorphism
     // ATTENTION: delegates were prefered to keep look&feel with CUO source code. But complex commands have specializations
@@ -14,14 +22,25 @@ namespace ClassicUO.Game.Scripting
         public delegate bool Handler(ArgumentList argList, bool quiet, bool force);
 
         // Tracks the last execution for all commands (using ClassicUO.Time Tick)
-        protected static Dictionary<string, uint> _executionsTracker = new Dictionary<string, uint>();
-        public uint LastExec
+        protected static Dictionary<string, uint> _cmdExecutionsTracker = new Dictionary<string, uint>();   // for this command
+        protected static Dictionary<CommandGroup, uint> _groupExecutionsTracker = new Dictionary<CommandGroup, uint>(); // for the command groups
+        public uint LastCmdExec
         {
             get
             {
-                if (!_executionsTracker.ContainsKey(Keyword)) // Store current time if command was never executed
-                    _executionsTracker[Keyword] = ClassicUO.Time.Ticks;
-                return _executionsTracker[Keyword];
+                if (!_cmdExecutionsTracker.ContainsKey(Keyword)) // Store current time if command was never executed
+                    _cmdExecutionsTracker[Keyword] = ClassicUO.Time.Ticks;
+                return _cmdExecutionsTracker[Keyword];
+            }
+        }
+
+        public uint LastGroupExec
+        {
+            get
+            {
+                if (!_groupExecutionsTracker.ContainsKey(Group)) // Store current time if no command in the group was ever executed
+                    _groupExecutionsTracker[Group] = ClassicUO.Time.Ticks;
+                return _groupExecutionsTracker[Group];
             }
         }
 
@@ -37,6 +56,9 @@ namespace ClassicUO.Game.Scripting
 
         // Time (in ms/ticks) the command has to wait between executions
         public int WaitTime { get; protected set; }
+
+        // Group (behavior) for this command
+        public CommandGroup Group { get; protected set; }
 
         // Metadata of arguments to handle default values and command specific aliases
         public int MandatoryArgs { get; protected set; } // Number of mandatory args (always first values in provided argument array)
@@ -70,10 +92,11 @@ namespace ClassicUO.Game.Scripting
         }
 
         // Public constructor to be used when adding commands via delegates
-        public Command(string usage, Handler execLogic, int waitTime) : this(usage)
+        public Command(string usage, Handler execLogic, int waitTime, CommandGroup group) : this(usage)
         {
             ExecutionLogic = execLogic;
             WaitTime = waitTime;
+            Group = group;
         }
 
         // Execute the command according to queing rules and provided logic
@@ -88,13 +111,16 @@ namespace ClassicUO.Game.Scripting
             }
 
             // Check if waiting is over (no blocking, we keep checking as Razor does: each time game loop call us)
-            if (Time.Ticks - LastExec > WaitTime)
-            {
-                _executionsTracker[Keyword] = ClassicUO.Time.Ticks; // Store time of this execution (as the last execution) 
+            if (Wait())
+            {   
                 try
                 {   // ATTENTION: we create an ArgumentList to avoid extra processing of arguments for every call (such as when Wait is called several times)
                     ArgumentList argList = new ArgumentList(args, MandatoryArgs, ExpectedArgs);
-                    return ExecutionLogic(argList, quiet, force); // Execute the command and do the magic
+                    if(ExecutionLogic(argList, quiet, force)) // Execute the command and do the magic
+                    {
+                        Tick(); // ATTENTION: Store time of this execution (as the last execution) only when returning true
+                        return true;
+                    } 
                 }
                 catch (ScriptCommandError cex)
                 {
@@ -110,10 +136,31 @@ namespace ClassicUO.Game.Scripting
                 }
                 finally
                 {
+                    Tick(); // ATTENTION: Store time of this execution (as the last execution) only when returning true
                     Interpreter.ClearTimeout(); // Always clear the timeout after a command ended execution
                 }
             }
-            else return false;
+            return false;
+        }
+
+        // Check if the command needs to wait before executing
+        protected bool Wait()
+        {
+            // Start checking the last time this command executed
+            if (Time.Ticks - LastCmdExec > WaitTime)
+            {
+                // ATTENTION: as there are restrictions on action, like picking up an item, commands need shared waits as well
+                // And than check other commands in the same bucket
+                return (Time.Ticks - LastGroupExec > WaitTime);
+            }
+            return false;
+        }
+
+        // Update timers related to this command
+        protected void Tick()
+        {
+            _cmdExecutionsTracker[Keyword] = ClassicUO.Time.Ticks;
+            _groupExecutionsTracker[Group] = ClassicUO.Time.Ticks;
         }
     }
 }

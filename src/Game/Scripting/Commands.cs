@@ -40,15 +40,31 @@ namespace ClassicUO.Game.Scripting
     public static class Commands
     {
         // Helper function to register command execution
-        private static void AddHandler(string usage, Command.Handler execLogic, int waitTime = 200)
+        internal static void AddHandler(string usage, Command.Handler execLogic, int waitTime = 200, CommandGroup group = CommandGroup.None)
         {
-            var cmd = new Command(usage, execLogic, waitTime);
+            var cmd = new Command(usage, execLogic, waitTime, group);
             Interpreter.RegisterCommandHandler(cmd.Keyword, cmd.Execute);
         }
 
-        // ATTENTION: This debuggign appoach may be slow. Use only for QA and disable by default.
-        public static bool DebugCommands = true;
-        public static void DebugMsg(string msg)
+        // Helper function to invoke another command
+        internal static bool Invoke(Command.Handler cmd, bool quiet, bool force, params (string Name, string Value)[] args)
+        {
+            // We build an argument list with virtual args
+            VirtualArgument[] virtualArgs = new VirtualArgument[args.Length];
+            string[] definitions = new string[args.Length];
+            for (int i = 0; i < args.Length; i++)
+            {
+                definitions[i] = args[i].Name;
+                virtualArgs[i] = new VirtualArgument(args[i].Value);
+            }
+            ArgumentList argList = new ArgumentList(virtualArgs, args.Length, definitions);
+            // and we return the command result
+            return cmd(argList, quiet, force);
+        }
+
+        // ATTENTION: This debugging appoach may be slow. Use only for QA and disable by default.
+        internal static bool DebugCommands = true;
+        internal static void DebugMsg(string msg)
         {
             if(DebugCommands)
             {
@@ -79,16 +95,16 @@ namespace ClassicUO.Game.Scripting
             // Add definitions for all supported commands
             AddHandler("setability ('primary'/'secondary'/'stun'/'disarm') ['on'/'off']", SetAbility);
             AddHandler("attack (serial)", Attack);
-            AddHandler("clearhands ('left'/'right'/'both')", ClearHands);
+            AddHandler("clearhands ('left'/'right'/'both')", ClearHands, 800, CommandGroup.PickUp);
             AddHandler("clickobject (serial)", ClickObject);
             AddHandler("bandageself", BandageSelf);
             AddHandler("usetype (graphic) [color] [source] [range or search level]", UseType);
             AddHandler("useobject (serial)", UseObject);
             AddHandler("useonce (graphic) [color]", UseOnce);
-            AddHandler("moveitem (serial) (destination) [(x, y, z)] [amount]", MoveItem, 800);
-            AddHandler("moveitemoffset (serial) (destination) [(x, y, z)] [amount]", MoveItemOffset, 800);
-            AddHandler("movetype (graphic) (source) (destination) [(x, y, z)] [color] [amount] [range or search level]", MoveType, 800);
-            AddHandler("movetypeoffset (graphic) (source) 'ground' [(x, y, z)] [color] [amount] [range or search level]", MoveTypeOffset, 800);
+            AddHandler("moveitem (serial) (destination) [(x, y, z)] [amount]", MoveItem, 800, CommandGroup.PickUp);
+            AddHandler("moveitemoffset (serial) (destination) [(x, y, z)] [amount]", MoveItemOffset, 800, CommandGroup.PickUp);
+            AddHandler("movetype (graphic) (source) (destination) [(x, y, z)] [color] [amount] [range or search level]", MoveType, 800, CommandGroup.PickUp);
+            AddHandler("movetypeoffset (graphic) (source) 'ground' [(x, y, z)] [color] [amount] [range or search level]", MoveTypeOffset, 800, CommandGroup.PickUp);
             AddHandler("walk (direction)", MovementLogic(false), MovementSpeed.STEP_DELAY_WALK);
             AddHandler("turn (direction)", MovementLogic(false), MovementSpeed.STEP_DELAY_WALK);
             AddHandler("run (direction)", MovementLogic(true), MovementSpeed.STEP_DELAY_WALK / 2);
@@ -96,10 +112,9 @@ namespace ClassicUO.Game.Scripting
             AddHandler("feed (serial) ('food name'/'food group'/'any'/graphic) [color] [amount]", Feed);
             AddHandler("rename (serial) ('name')", Rename);
             AddHandler("shownames ['mobiles'/'corpses']", ShowNames);
-            AddHandler("togglehands ('left'/'right')", ToggleHands);
-            // UO Steam: we are making it different from  UO Steam and allowing the layer to be optional
-            AddHandler("equipitem (serial) [layer]", EquipItem);
-            AddHandler("togglemounted", ToggleMounted);
+            AddHandler("togglehands ('left'/'right')", ToggleHands, 800, CommandGroup.PickUp);
+            AddHandler("equipitem (serial) [layer]", EquipItem, 800, CommandGroup.PickUp);
+            AddHandler("togglemounted", ToggleMounted, 800);
             //AddDefinition("equipwand ('spell name'/'any'/'undefined') [minimum charges]", EquipWand, WaitForMs(500), Command.Attributes.ComplexInterAction);
             //AddDefinition("buy ('list name')", Buy, WaitForMs(500), Command.Attributes.ComplexInterAction);
             //AddDefinition("sell ('list name')", Sell, WaitForMs(500), Command.Attributes.ComplexInterAction);
@@ -320,68 +335,47 @@ namespace ClassicUO.Game.Scripting
             return true;
         }
 
-        private static uint[] ClearHands_Items = new uint[2] { 0, 0};
         private static bool ClearHands(ArgumentList argList, bool quiet, bool force)
         {
             // +== UOSTEAM =========================================================================+
             // |  - Will ignore command (returning success) if holding/dragging an item             |
             // +====================================================================================+
-            var hand = argList.NextAs<string>().ToLower();
-            var backpack = World.Player.FindItemByLayer(Layer.Backpack);
-
-            // Are we moving something already? If so, keep doing it
+            // If we are already moving item from hand to backpack, keep moving it
             if (OperationMoveItem.CurrentState != OperationMoveItem.State.NotMoving)
             {
-                OperationMoveItem.MoveItem(OperationMoveItem.CurrentItem.Serial, OperationMoveItem.CurrentItem.Serial);
-                return false;
+                OperationMoveItem.MoveItem();
+                return false; // Come back to command even after item finished moving as we may have another hand to handle
             }
 
-            switch (hand)
+            // Read arg and retrieve needed info on hands
+            var backpack = World.Player.FindItemByLayer(Layer.Backpack);
+            var hand = argList.NextAs<string>().ToLower();
+            if(hand != "left" && hand != "right" && hand != "both")
+                throw new ScriptCommandError("item layer not found");
+
+            // Clear hands
+            if (hand == "left" || hand == "both")
             {
-                case "both":
-                    // Nothing on both hands, so we are done
-                    if (World.Player.FindItemByHand(IO.ItemExt_PaperdollAppearance.Right) == null &&
-                        World.Player.FindItemByHand(IO.ItemExt_PaperdollAppearance.Left) == null)
-                        return true;
-
-                    // Otherwise we need to unequip one hand at a time
-                    var item = World.Player.FindItemByLayer(Layer.HeldInHand1);
-                    if (item != null)
-                    {
-                        OperationMoveItem.MoveItem(item.Serial, backpack.Serial);
-                        return false;
-                    }
-                    item = World.Player.FindItemByLayer(Layer.HeldInHand2);
-                    if (item != null)
-                    {
-                        OperationMoveItem.MoveItem(item.Serial, backpack.Serial);
-                        return false;
-                    }
-                    break;
-                case "left":
-                    GameActions.ClearEquipped(IO.ItemExt_PaperdollAppearance.Left);
-                    //GameActions.Unequip(Layer.HeldInHand2);
-                    //var leftItem = World.Player.FindItemByLayer();
-                    //if (leftItem != null)
-                    //{
-                    //    OperationMoveItem.MoveItem(leftItem.Serial, backpack.Serial);
-                    //    return false;
-                    //}
-                    break;
-                case "right":
-                    GameActions.ClearEquipped(IO.ItemExt_PaperdollAppearance.Right);
-                    //GameActions.Unequip(Layer.HeldInHand1);
-                    //var rightItem = World.Player.FindItemByLayer(Layer.HeldInHand1);
-                    //if (rightItem != null)
-                    //{
-                    //    OperationMoveItem.MoveItem(rightItem.Serial, backpack.Serial);
-                    //    return false;
-                    //}
-                    break;
-                default:
-                    throw new ScriptSyntaxError("invalid hand");
+                var item = World.Player.FindItemByLayer(Layer.HeldInHand2);
+                if (item != null)
+                {
+                    Aliases.Write<uint>($"lastleftequipped", item.Serial);
+                    OperationMoveItem.MoveItem(item.Serial, backpack.Serial);
+                    return false; // Enter move item loop
+                }
+            }
+            if (hand == "right" || hand == "both")
+            {
+                var item = World.Player.FindItemByLayer(Layer.HeldInHand1);
+                if (item != null)
+                {
+                    Aliases.Write<uint>($"lastrightequipped", item.Serial);
+                    OperationMoveItem.MoveItem(item.Serial, backpack.Serial);
+                    return false; // Enter move item loop
+                }
             }
 
+            // If we reached here we have no more items in the processed hands :)
             return true;
         }
 
@@ -495,18 +489,19 @@ namespace ClassicUO.Game.Scripting
             // |  - If already holding an item, it will move item in hand to destination            |
             // |  - Ground is ignored as a destination                                              |
             // +====================================================================================+
-            var serial = argList.NextAs<uint>();
-            var entity = CmdFindEntityBySerial(serial);
+            // If we are already moving item from/to hand, keep moving it
+            if (OperationMoveItem.CurrentState != OperationMoveItem.State.NotMoving)
+                return (OperationMoveItem.MoveItem() == OperationMoveItem.State.NotMoving); // If item finished moving return true
+
+            // Read arg
+            var serial = argList.NextAs<uint>();    
             var destination = argList.NextAs<uint>();
             var x = argList.NextAs<int>();
             var y = argList.NextAs<int>();
             var z = argList.NextAs<int>();
             var amount = argList.NextAs<int>();
 
-            if (entity == null)
-            {
-                throw new ScriptCommandError("item not found");
-            }
+            // Check destination
             if (destination == 0)
             {
                 throw new ScriptCommandError("destination not found");
@@ -515,6 +510,13 @@ namespace ClassicUO.Game.Scripting
             {
                 DebugMsg("Ground is not accepted as a destination");
                 return true;
+            }
+
+            // Retrieve item
+            var entity = CmdFindEntityBySerial(serial);
+            if (entity == null)
+            {
+                throw new ScriptCommandError("item not found");
             }
 
             // ATTENTION: the logic of moving an item is used by several commands, so it was implemented as an operation
@@ -528,18 +530,19 @@ namespace ClassicUO.Game.Scripting
             // |  - Almost same behavior as MoveItem, but "ground" is accepted                      |
             // |  - If already holding an item, it will move item in hand to destination            |
             // +====================================================================================+
+            // If we are already moving item from/to hand, keep moving it
+            if (OperationMoveItem.CurrentState != OperationMoveItem.State.NotMoving)
+                return (OperationMoveItem.MoveItem() == OperationMoveItem.State.NotMoving); // If item finished moving return true
+
+            // Read arg
             var serial = argList.NextAs<uint>();
-            var entity = CmdFindEntityBySerial(serial);
             var destination = argList.NextAs<uint>();
             var x = argList.NextAs<int>();
             var y = argList.NextAs<int>();
             var z = argList.NextAs<int>();
             var amount = argList.NextAs<int>();
 
-            if (entity == null)
-            {
-                throw new ScriptCommandError("item not found");
-            }
+            // Check destination
             if (destination == 0)
             {
                 throw new ScriptCommandError("destination not found");
@@ -552,6 +555,14 @@ namespace ClassicUO.Game.Scripting
                 z += World.Map.GetTileZ(x, y);
             }
 
+            // Retrieve item
+            var entity = CmdFindEntityBySerial(serial);
+            if (entity == null)
+            {
+                throw new ScriptCommandError("item not found");
+            }
+
+            // Start moving it
             OperationMoveItem.MoveItem(serial, destination, x, y, z, amount);
             return OperationMoveItem.CurrentState == OperationMoveItem.State.NotMoving;
         }
@@ -561,6 +572,11 @@ namespace ClassicUO.Game.Scripting
             // += UO Steam =========================================================================+
             // |  - Same behavior as MoveItem                                                       |
             // +====================================================================================+
+            // If we are already moving item from/to hand, keep moving it
+            if (OperationMoveItem.CurrentState != OperationMoveItem.State.NotMoving)
+                return (OperationMoveItem.MoveItem() == OperationMoveItem.State.NotMoving); // If item finished moving return true
+
+            // Read arg
             var graphic = argList.NextAs<ushort>();
             var source = argList.NextAs<uint>();
             var destination = argList.NextAs<uint>();
@@ -571,6 +587,7 @@ namespace ClassicUO.Game.Scripting
             var amount = argList.NextAs<int>();
             var range = argList.NextAs<int>();
 
+            // Check destination
             if (destination == 0)
             {
                 throw new ScriptCommandError("destination not found");
@@ -580,12 +597,15 @@ namespace ClassicUO.Game.Scripting
                 DebugMsg("Ground is not accepted as a destination");
                 return true;
             }
+
+            // Retrieve item
             Item item = CmdFindItemByGraphic(graphic, color, source, amount, range);
             if (item == null)
             {
                 throw new ScriptCommandError("item not found");
             }
 
+            // Start moving it
             OperationMoveItem.MoveItem(item.Serial, destination, x, y, z, amount);
             return OperationMoveItem.CurrentState == OperationMoveItem.State.NotMoving;
         }
@@ -596,6 +616,11 @@ namespace ClassicUO.Game.Scripting
             // |  - Almost same behavior as MoveItem, but "ground" is accepted                      |
             // |  - If already holding an item, it will move item in hand to destination            |
             // +====================================================================================+
+            // If we are already moving item from/to hand, keep moving it
+            if (OperationMoveItem.CurrentState != OperationMoveItem.State.NotMoving)
+                return (OperationMoveItem.MoveItem() == OperationMoveItem.State.NotMoving); // If item finished moving return true
+
+            // Read arg
             var graphic = argList.NextAs<ushort>();
             var source = argList.NextAs<uint>();
             var destination = argList.NextAs<uint>();
@@ -606,6 +631,7 @@ namespace ClassicUO.Game.Scripting
             var amount = argList.NextAs<int>();
             var range = argList.NextAs<int>();
 
+            // Check destination
             if (destination == 0)
             {
                 throw new ScriptCommandError("destination not found");
@@ -617,12 +643,15 @@ namespace ClassicUO.Game.Scripting
                 y += World.Player.Y;
                 z += World.Map.GetTileZ(x, y);
             }
+
+            // Retrieve item
             Item item = CmdFindItemByGraphic(graphic, color, source, amount, range);
             if (item == null)
             {
                 throw new ScriptCommandError("item not found");
             }
 
+            // Start moving it
             OperationMoveItem.MoveItem(item.Serial, destination, x, y, z, amount);
             return OperationMoveItem.CurrentState == OperationMoveItem.State.NotMoving;
         }
@@ -731,100 +760,152 @@ namespace ClassicUO.Game.Scripting
             // |  - If equipped force unequip with clear to save cache                              |
             // |  - Inever fails                                                                    |
             // +====================================================================================+
-            var hand = argList.NextAs<string>().ToLower();
-            var appearance = (IO.ItemExt_PaperdollAppearance)Enum.Parse(typeof(IO.ItemExt_PaperdollAppearance), hand, true);
-            var current = World.Player.FindItemByHand(appearance);
+            // If we are already moving item from/to hand, keep moving it
+            if (OperationMoveItem.CurrentState != OperationMoveItem.State.NotMoving)
+                return (OperationMoveItem.MoveItem() == OperationMoveItem.State.NotMoving); // If item finished moving return true
 
-            if (current != null) // If item is present on hand, enequip with Clear to have cache saved
+            // Read arg and retrieve needed info on hands
+            var backpack = World.Player.FindItemByLayer(Layer.Backpack);
+            var hand = argList.NextAs<string>().ToLower();
+            Layer layer;
+            switch (hand)
             {
-                GameActions.ClearEquipped(appearance);
+                case "left":
+                    layer = Layer.HeldInHand2;
+                    break;
+                case "right":
+                    layer = Layer.HeldInHand1;
+                    break;
+                default:
+                    throw new ScriptCommandError("item layer not found");
+            }
+
+            // If item is present on hand, start unequip and save cache
+            var item = World.Player.FindItemByLayer(layer);
+            if (item != null) 
+            {
+                Aliases.Write<uint>($"last{hand}equipped", item.Serial);
+                OperationMoveItem.MoveItem(item.Serial, backpack.Serial);
             }
             else // Otherwise try equipping cached
             {
-                GameActions.ToggleEquip(appearance);
-                // And check if item was really equipped
-                current = World.Player.FindItemByHand(appearance);
-                if (current == null)
-                    throw new ScriptCommandError("item not found");
+                uint cachedSerial = 0;
+                if(Aliases.Read<uint>($"last{hand}equipped", ref cachedSerial))
+                {
+                    //OperationMoveItem.MoveItem(item.Serial, backpack.Serial);
+                    if (GameActions.PickUp(cachedSerial, 0, 0, 1))
+                        GameActions.Equip(layer);
+                }
+                else
+                    throw new ScriptCommandError("item not found");                 
             }
             return true;
         }
 
-        private static uint EquipItem_item = 0;
-        private static Layer EquipItem_layer = Layer.Invalid;
+        //private static uint EquipItem_item = 0;
+        //private static Layer EquipItem_layer = Layer.Invalid;
         public static bool EquipItem(ArgumentList argList, bool quiet, bool force)
         {
-            // READY - Delete after review
-            // ----------------------------------  UO Steam  --------------------------------------
-            //   Never fails.
-            //   It returns Usage in white if arguments are invalid
-            //   If item already in hand it auto-drops saying: "You are already holding an item"
-            //   BLOCK UNTIL ACTION FINISHES
-            // ------------------------------------------------------------------------------------
-            Interpreter.Timeout(5000, () => {
-                EquipItem_item = 0;
-                EquipItem_layer = Layer.Invalid;
-                GameActions.Print($"EquipItem: TIMEOUT", hue: 0x104, type: MessageType.System);
-                return true;
-            });
-            if (EquipItem_item == 0) // Pick up the item (locking it on cursor)
+            if (ItemHold.Enabled)
             {
-                if (ItemHold.Enabled)
-                {
-                    GameActions.Print($"You are already holding an item", type: MessageType.Command);
-                    GameActions.DropItem(ItemHold.Serial, ItemHold.X, ItemHold.Y, ItemHold.Z, ItemHold.Container);
-                    Interpreter.ClearTimeout();
-                    return true;
-                }
-
-                var item = World.Get(argList.NextAs<uint>());
-                if (item == null)
-                    throw new ScriptRunTimeError(null, "item not found");
-
-                EquipItem_layer = (Layer)argList.NextAs<int>();
-                if (EquipItem_layer == Layer.Invalid)
-                    EquipItem_layer = (Layer)ItemHold.ItemData.Layer;
-
-                EquipItem_item = item.Serial;
-                GameActions.PickUp(item, 0, 0, 1);
-                GameActions.Print($"EquipItem: Picking up {EquipItem_item}", hue: 0x104, type: MessageType.System);
-            }
-            else if(EquipItem_layer != Layer.Invalid && ItemHold.Enabled) // Equip
-            {
-                // Equip item with given layer
-                EquipItem_item = ItemHold.Serial;
-                GameActions.Equip(EquipItem_layer);
-                GameActions.Print($"EquipItem: Equipping up {EquipItem_item}", hue: 0x104, type: MessageType.System);
-            }
-            else if(World.Player.FindItemByLayer(EquipItem_layer)?.Serial == EquipItem_item)
-            {
-                // Is item finally equipped?
-                GameActions.Print($"EquipItem: Equipped {EquipItem_item}", hue: 0x104, type: MessageType.System);
-                EquipItem_item = 0;
-                EquipItem_layer = Layer.Invalid;
-                Interpreter.ClearTimeout();
+                GameActions.Print($"You are already holding an item", type: MessageType.Command);
+                GameActions.DropItem(ItemHold.Serial, ItemHold.X, ItemHold.Y, ItemHold.Z, ItemHold.Container);
                 return true;
             }
 
-            return false;
+            var item = World.Get(argList.NextAs<uint>());
+            if (item == null)
+                throw new ScriptRunTimeError(null, "item not found");
+
+            var layer = (Layer)argList.NextAs<int>();
+            if (layer == Layer.Invalid)
+                layer = (Layer)ItemHold.ItemData.Layer;
+
+            if (GameActions.PickUp(item.Serial, 0, 0, 1))
+                GameActions.Equip(layer);
+            return true;
+
+            //// READY - Delete after review
+            //// ----------------------------------  UO Steam  --------------------------------------
+            ////   Never fails.
+            ////   It returns Usage in white if arguments are invalid
+            ////   If item already in hand it auto-drops saying: "You are already holding an item"
+            ////   BLOCK UNTIL ACTION FINISHES
+            //// ------------------------------------------------------------------------------------
+            //Interpreter.Timeout(5000, () => {
+            //    EquipItem_item = 0;
+            //    EquipItem_layer = Layer.Invalid;
+            //    GameActions.Print($"EquipItem: TIMEOUT", hue: 0x104, type: MessageType.System);
+            //    return true;
+            //});
+            //if (EquipItem_item == 0) // Pick up the item (locking it on cursor)
+            //{
+            //    if (ItemHold.Enabled)
+            //    {
+            //        GameActions.Print($"You are already holding an item", type: MessageType.Command);
+            //        GameActions.DropItem(ItemHold.Serial, ItemHold.X, ItemHold.Y, ItemHold.Z, ItemHold.Container);
+            //        Interpreter.ClearTimeout();
+            //        return true;
+            //    }
+
+            //    var item = World.Get(argList.NextAs<uint>());
+            //    if (item == null)
+            //        throw new ScriptRunTimeError(null, "item not found");
+
+            //    EquipItem_layer = (Layer)argList.NextAs<int>();
+            //    if (EquipItem_layer == Layer.Invalid)
+            //        EquipItem_layer = (Layer)ItemHold.ItemData.Layer;
+
+            //    EquipItem_item = item.Serial;
+            //    GameActions.PickUp(item, 0, 0, 1);
+            //    GameActions.Print($"EquipItem: Picking up {EquipItem_item}", hue: 0x104, type: MessageType.System);
+            //}
+            //else if(EquipItem_layer != Layer.Invalid && ItemHold.Enabled) // Equip
+            //{
+            //    // Equip item with given layer
+            //    EquipItem_item = ItemHold.Serial;
+            //    GameActions.Equip(EquipItem_layer);
+            //    GameActions.Print($"EquipItem: Equipping up {EquipItem_item}", hue: 0x104, type: MessageType.System);
+            //}
+            //else if(World.Player.FindItemByLayer(EquipItem_layer)?.Serial == EquipItem_item)
+            //{
+            //    // Is item finally equipped?
+            //    GameActions.Print($"EquipItem: Equipped {EquipItem_item}", hue: 0x104, type: MessageType.System);
+            //    EquipItem_item = 0;
+            //    EquipItem_layer = Layer.Invalid;
+            //    Interpreter.ClearTimeout();
+            //    return true;
+            //}
+
+            //return false;
         }
 
         public static bool ToggleMounted(ArgumentList argList, bool quiet, bool force)
         {
-            uint serial = 0;
+            // +== UOSTEAM =========================================================================+
+            // |  - Prompt for Mount alias if none is found (but cancel command)                    |
+            // +====================================================================================+
 
-            // If player is mounted we just double ckick ourselves to execute a dismount
-            if (World.Player.IsMounted)
-                serial = World.Player.Serial;
-            else if (!Aliases.Read<uint>("mount", ref serial) || serial == 0) // Otherwise we go after the mount serial
+            // If player has a mount, save mount alias before dismounting
+            uint serial = 0;
+            Item it = World.Player.FindItemByLayer(Layer.Mount);
+            if (it != null)
             {
-                // UOStream - behavior is prompting for mount if not found and requiring command to eb called again for mount to occur
-                //VirtualArgument promptArg = new VirtualArgument("mount");
-                //ArgumentList promptParams = new ArgumentList(new Argument[1] { promptArg }, Definitions["promptalias"].ArgTypes);
-                //Command.Queues[execution.Cmd.Attribute].Enqueue((new CommandExecution(Definitions["promptalias"], promptParams, execution.Quiet, execution.Force)));
+                // Aliases.Write<uint>("mount", it.Serial); //ATTENTION: Item in Layer.Mount is not the mount that will be in the world after dismounting
+                serial = World.Player.Serial;
+            }
+            else if (!Aliases.Read<uint>("mount", ref serial) || serial == 0) // Otherwise try to find mount alias
+            {
+                // If nothing is found, prompt alias as well
+                if(!Invoke(PromptAlias, false, false, ("alias", "mount")))
+                {
+                    return false; // As we return false, we force the loop of this command being called again and recalling PromptAlias.
+                }
             }
 
-            GameActions.DoubleClick(serial);
+            // Finally, double click mount to mount it, or player to dismount it
+            if(serial != 0)
+                GameActions.DoubleClick(serial);
             return true;
         }
 
