@@ -33,16 +33,21 @@ using ClassicUO.Game.Scenes;
 using ClassicUO.Game.UI.Gumps;
 using ClassicUO.Input;
 using ClassicUO.Network;
+using ClassicUO.Resources;
 
 namespace ClassicUO.Game.Scripting
 {
     // Class grouping all command related functionality, including implemented handles
     public static class Commands
     {
-        // Helper function to register command execution
+        // Helper functions to register command execution
         internal static void AddHandler(string usage, Command.Handler execLogic, int waitTime = 200, CommandGroup group = CommandGroup.None)
         {
             var cmd = new Command(usage, execLogic, waitTime, group);
+            Interpreter.RegisterCommandHandler(cmd.Keyword, cmd.Execute);
+        }
+        internal static void AddHandler(Command cmd)
+        {
             Interpreter.RegisterCommandHandler(cmd.Keyword, cmd.Execute);
         }
 
@@ -105,9 +110,9 @@ namespace ClassicUO.Game.Scripting
             AddHandler("moveitemoffset (serial) (destination) [(x, y, z)] [amount]", MoveItemOffset, 800, CommandGroup.PickUp);
             AddHandler("movetype (graphic) (source) (destination) [(x, y, z)] [color] [amount] [range or search level]", MoveType, 800, CommandGroup.PickUp);
             AddHandler("movetypeoffset (graphic) (source) 'ground' [(x, y, z)] [color] [amount] [range or search level]", MoveTypeOffset, 800, CommandGroup.PickUp);
-            AddHandler("walk (direction)", MovementLogic(false), MovementSpeed.STEP_DELAY_WALK);
-            AddHandler("turn (direction)", MovementLogic(false), MovementSpeed.STEP_DELAY_WALK);
-            AddHandler("run (direction)", MovementLogic(true), MovementSpeed.STEP_DELAY_WALK / 2);
+            AddHandler(new MovementCommand("walk (direction)", WalkTurnRun(false)));
+            AddHandler(new MovementCommand("turn (direction)", WalkTurnRun(false)));
+            AddHandler(new MovementCommand("run (direction)", WalkTurnRun(true)));
             AddHandler("useskill ('skill name'/'last')", UseSkill);
             AddHandler("feed (serial) ('food name'/'food group'/'any'/graphic) [color] [amount]", Feed);
             AddHandler("rename (serial) ('name')", Rename);
@@ -122,11 +127,11 @@ namespace ClassicUO.Game.Scripting
             //AddDefinition("clearsell", ClearSell, WaitForMs(500), Command.Attributes.ComplexInterAction);
             //AddDefinition("organizer ('profile name') [source] [destination]", Organizer, WaitForMs(500), Command.Attributes.ComplexInterAction);
             //AddDefinition("organizing", Organizing, WaitForMs(500), Command.Attributes.ComplexInterAction);
-            AddHandler("autoloot", UnsupportedCmd);
+            
             AddHandler("dress ['profile name']", Dress);
             AddHandler("undress ['profile name']", Undress);
             AddHandler("dressconfig", Dressconfig);
-            AddHandler("toggleautoloot", UnsupportedCmd);
+            
             //AddDefinition("togglescavenger", UnsupportedCmd, WaitForMs(25));
             AddHandler("clickscreen (x) (y) ['single'/'double'] ['left'/'right']", ClickScreen);
             AddHandler("findtype (graphic) [color] [source] [amount] [range or search level]", FindType);
@@ -135,7 +140,16 @@ namespace ClassicUO.Game.Scripting
             AddHandler("pushlist ('list name') ('element value') ['front'/'back']", PushList);
             AddHandler("createlist ('list name')", CreateList);
             AddHandler("removelist ('list name')", RemoveList);
-            AddHandler("msg ('text') [color]", Msg);
+            AddHandler("msg ('text') [color]", SayMsg, 800);
+            AddHandler("partymsg ('text')", SayPartyMsg, 800);
+            AddHandler("guildmsg ('text')", SayMsgType(MessageType.Guild), 800);
+            AddHandler("allymsg ('text')", SayMsgType(MessageType.Alliance), 800);
+            AddHandler("whispermsg ('text')", SayMsgType(MessageType.Whisper), 800);
+            AddHandler("yellmsg ('text')", SayMsgType(MessageType.Yell), 800);
+            AddHandler("sysmsg ('text')", PrintMsgType(MessageType.System), 800);
+            AddHandler("emotemsg ('text')", SayMsgType(MessageType.Emote), 800);
+            AddHandler("headmsg ('text') [color] [serial]", HeadMsg, 800);
+            AddHandler("timermsg ('timer name') [color]", TimerMsg, 800);
             AddHandler("setalias ('alias name') [serial]", SetAlias);
             AddHandler("unsetalias ('alias name')", UnsetAlias);
             AddHandler("promptalias ('alias name')", PromptAlias);
@@ -144,6 +158,14 @@ namespace ClassicUO.Game.Scripting
             AddHandler("waitfortarget (timeout)", WaitForTarget);
             AddHandler("pause (timeout)", Pause);
             AddHandler("target (serial)", ClickTarget);
+
+            AddHandler("autoloot", UnsupportedCmd);
+            AddHandler("toggleautoloot", UnsupportedCmd);
+            AddHandler("chatmsg ('text')", UnsupportedCmd);
+            AddHandler("promptmsg ('text')", UnsupportedCmd);
+            AddHandler("waitforprompt (timeout)", UnsupportedCmd);
+            AddHandler("cancelprompt", UnsupportedCmd);
+
             ////Interpreter.RegisterCommandHandler("poplist", );
             //Interpreter.RegisterCommandHandler("pushlist", );
             ////Interpreter.RegisterCommandHandler("removelist", );
@@ -341,9 +363,9 @@ namespace ClassicUO.Game.Scripting
             // |  - Will ignore command (returning success) if holding/dragging an item             |
             // +====================================================================================+
             // If we are already moving item from hand to backpack, keep moving it
-            if (OperationMoveItem.CurrentState != OperationMoveItem.State.NotMoving)
+            if (OperationWithItem.CurrentState != OperationWithItem.State.Nothing)
             {
-                OperationMoveItem.MoveItem();
+                OperationWithItem.MoveItem();
                 return false; // Come back to command even after item finished moving as we may have another hand to handle
             }
 
@@ -360,7 +382,7 @@ namespace ClassicUO.Game.Scripting
                 if (item != null)
                 {
                     Aliases.Write<uint>($"lastleftequipped", item.Serial);
-                    OperationMoveItem.MoveItem(item.Serial, backpack.Serial);
+                    OperationWithItem.MoveItem(item.Serial, backpack.Serial);
                     return false; // Enter move item loop
                 }
             }
@@ -370,7 +392,7 @@ namespace ClassicUO.Game.Scripting
                 if (item != null)
                 {
                     Aliases.Write<uint>($"lastrightequipped", item.Serial);
-                    OperationMoveItem.MoveItem(item.Serial, backpack.Serial);
+                    OperationWithItem.MoveItem(item.Serial, backpack.Serial);
                     return false; // Enter move item loop
                 }
             }
@@ -490,8 +512,8 @@ namespace ClassicUO.Game.Scripting
             // |  - Ground is ignored as a destination                                              |
             // +====================================================================================+
             // If we are already moving item from/to hand, keep moving it
-            if (OperationMoveItem.CurrentState != OperationMoveItem.State.NotMoving)
-                return (OperationMoveItem.MoveItem() == OperationMoveItem.State.NotMoving); // If item finished moving return true
+            if (OperationWithItem.CurrentState != OperationWithItem.State.Nothing)
+                return (OperationWithItem.MoveItem() == OperationWithItem.State.Nothing); // If item finished moving return true
 
             // Read arg
             var serial = argList.NextAs<uint>();    
@@ -520,8 +542,8 @@ namespace ClassicUO.Game.Scripting
             }
 
             // ATTENTION: the logic of moving an item is used by several commands, so it was implemented as an operation
-            OperationMoveItem.MoveItem(serial, destination, x, y, z, amount);
-            return OperationMoveItem.CurrentState == OperationMoveItem.State.NotMoving;
+            OperationWithItem.MoveItem(serial, destination, x, y, z, amount);
+            return OperationWithItem.CurrentState == OperationWithItem.State.Nothing;
         }
 
         private static bool MoveItemOffset(ArgumentList argList, bool quiet, bool force)
@@ -531,8 +553,8 @@ namespace ClassicUO.Game.Scripting
             // |  - If already holding an item, it will move item in hand to destination            |
             // +====================================================================================+
             // If we are already moving item from/to hand, keep moving it
-            if (OperationMoveItem.CurrentState != OperationMoveItem.State.NotMoving)
-                return (OperationMoveItem.MoveItem() == OperationMoveItem.State.NotMoving); // If item finished moving return true
+            if (OperationWithItem.CurrentState != OperationWithItem.State.Nothing)
+                return (OperationWithItem.MoveItem() == OperationWithItem.State.Nothing); // If item finished moving return true
 
             // Read arg
             var serial = argList.NextAs<uint>();
@@ -563,8 +585,8 @@ namespace ClassicUO.Game.Scripting
             }
 
             // Start moving it
-            OperationMoveItem.MoveItem(serial, destination, x, y, z, amount);
-            return OperationMoveItem.CurrentState == OperationMoveItem.State.NotMoving;
+            OperationWithItem.MoveItem(serial, destination, x, y, z, amount);
+            return OperationWithItem.CurrentState == OperationWithItem.State.Nothing;
         }
 
         private static bool MoveType(ArgumentList argList, bool quiet, bool force)
@@ -573,8 +595,8 @@ namespace ClassicUO.Game.Scripting
             // |  - Same behavior as MoveItem                                                       |
             // +====================================================================================+
             // If we are already moving item from/to hand, keep moving it
-            if (OperationMoveItem.CurrentState != OperationMoveItem.State.NotMoving)
-                return (OperationMoveItem.MoveItem() == OperationMoveItem.State.NotMoving); // If item finished moving return true
+            if (OperationWithItem.CurrentState != OperationWithItem.State.Nothing)
+                return (OperationWithItem.MoveItem() == OperationWithItem.State.Nothing); // If item finished moving return true
 
             // Read arg
             var graphic = argList.NextAs<ushort>();
@@ -606,8 +628,8 @@ namespace ClassicUO.Game.Scripting
             }
 
             // Start moving it
-            OperationMoveItem.MoveItem(item.Serial, destination, x, y, z, amount);
-            return OperationMoveItem.CurrentState == OperationMoveItem.State.NotMoving;
+            OperationWithItem.MoveItem(item.Serial, destination, x, y, z, amount);
+            return OperationWithItem.CurrentState == OperationWithItem.State.Nothing;
         }
 
         private static bool MoveTypeOffset(ArgumentList argList, bool quiet, bool force)
@@ -617,8 +639,8 @@ namespace ClassicUO.Game.Scripting
             // |  - If already holding an item, it will move item in hand to destination            |
             // +====================================================================================+
             // If we are already moving item from/to hand, keep moving it
-            if (OperationMoveItem.CurrentState != OperationMoveItem.State.NotMoving)
-                return (OperationMoveItem.MoveItem() == OperationMoveItem.State.NotMoving); // If item finished moving return true
+            if (OperationWithItem.CurrentState != OperationWithItem.State.Nothing)
+                return (OperationWithItem.MoveItem() == OperationWithItem.State.Nothing); // If item finished moving return true
 
             // Read arg
             var graphic = argList.NextAs<ushort>();
@@ -652,18 +674,18 @@ namespace ClassicUO.Game.Scripting
             }
 
             // Start moving it
-            OperationMoveItem.MoveItem(item.Serial, destination, x, y, z, amount);
-            return OperationMoveItem.CurrentState == OperationMoveItem.State.NotMoving;
+            OperationWithItem.MoveItem(item.Serial, destination, x, y, z, amount);
+            return OperationWithItem.CurrentState == OperationWithItem.State.Nothing;
         }
 
-        private static int MovementLogic_MoveIndex = -1;
-        public static Command.Handler MovementLogic(bool forceRun = false)
+        public static Command.Handler WalkTurnRun(bool forceRun = false)
         {
             // +== UOSTEAM =========================================================================+
             // |  - Full array of provided directions is processed (nothing runs in parallel)       |
             // |  - No "help" turn at start of movement, meaning a walk can be just a turn          |
             // |  - Turn moves character and acts exatcly as 'walk'                                 |
             // +====================================================================================+
+            // ATTENTION: movement seems to be somewhat affected by player latency.. we are ignoring that
 
             // Using currying technique so method can be reused for turn, walk and run
             return (argList, quiet, force) => {
@@ -672,17 +694,17 @@ namespace ClassicUO.Game.Scripting
                 var dirArray = argList.NextAsArray<string>();
 
                 // Start by reseting index
-                if (MovementLogic_MoveIndex < 0)
-                    MovementLogic_MoveIndex = 0;
+                if (MovementCommand.MoveIndex < 0)
+                    MovementCommand.MoveIndex = 0;
 
                 // Move player
-                var direction = (Direction)Enum.Parse(typeof(Direction), dirArray[MovementLogic_MoveIndex++], true);
+                var direction = (Direction)Enum.Parse(typeof(Direction), dirArray[MovementCommand.MoveIndex++], true);
                 World.Player.Walk(direction, forceRun || ProfileManager.CurrentProfile.AlwaysRun);
 
                 // Stop at end of array
-                if (MovementLogic_MoveIndex >= dirArray.Length)
+                if (MovementCommand.MoveIndex >= dirArray.Length)
                 {
-                    MovementLogic_MoveIndex = -1;
+                    MovementCommand.MoveIndex = -1;
                     return true;
                 }
                 return false;
@@ -742,7 +764,7 @@ namespace ClassicUO.Game.Scripting
         private static bool ShowNames(ArgumentList argList, bool quiet, bool force)
         {
             // +== UOSTEAM =========================================================================+
-            // |  - Simple and never fails                                                          |
+            // |  - Simple (direct call) and never (ignore) fails                                   |
             // +====================================================================================+
             var names = argList.NextAs<string>().ToLower();
             if (names == string.Empty)
@@ -761,8 +783,8 @@ namespace ClassicUO.Game.Scripting
             // |  - Inever fails                                                                    |
             // +====================================================================================+
             // If we are already moving item from/to hand, keep moving it
-            if (OperationMoveItem.CurrentState != OperationMoveItem.State.NotMoving)
-                return (OperationMoveItem.MoveItem() == OperationMoveItem.State.NotMoving); // If item finished moving return true
+            if (OperationWithItem.CurrentState != OperationWithItem.State.Nothing)
+                return (OperationWithItem.MoveItem() == OperationWithItem.State.Nothing); // If item finished moving return true
 
             // Read arg and retrieve needed info on hands
             var backpack = World.Player.FindItemByLayer(Layer.Backpack);
@@ -785,7 +807,7 @@ namespace ClassicUO.Game.Scripting
             if (item != null) 
             {
                 Aliases.Write<uint>($"last{hand}equipped", item.Serial);
-                OperationMoveItem.MoveItem(item.Serial, backpack.Serial);
+                OperationWithItem.MoveItem(item.Serial, backpack.Serial);
             }
             else // Otherwise try equipping cached
             {
@@ -802,82 +824,26 @@ namespace ClassicUO.Game.Scripting
             return true;
         }
 
-        //private static uint EquipItem_item = 0;
-        //private static Layer EquipItem_layer = Layer.Invalid;
         public static bool EquipItem(ArgumentList argList, bool quiet, bool force)
         {
-            if (ItemHold.Enabled)
-            {
-                GameActions.Print($"You are already holding an item", type: MessageType.Command);
-                GameActions.DropItem(ItemHold.Serial, ItemHold.X, ItemHold.Y, ItemHold.Z, ItemHold.Container);
-                return true;
-            }
+            // += UO Steam =========================================================================+
+            // |  - Same behavior as MoveItem but for Layers only                                   |
+            // +====================================================================================+
+            // If we are already moving item from/to hand, keep moving it
+            if (OperationWithItem.CurrentState != OperationWithItem.State.Nothing)
+                return (OperationWithItem.EquipItem() == OperationWithItem.State.Nothing); // If item finished moving return true
 
+            // Read arg
             var item = World.Get(argList.NextAs<uint>());
             if (item == null)
                 throw new ScriptRunTimeError(null, "item not found");
-
             var layer = (Layer)argList.NextAs<int>();
             if (layer == Layer.Invalid)
                 layer = (Layer)ItemHold.ItemData.Layer;
 
-            if (GameActions.PickUp(item.Serial, 0, 0, 1))
-                GameActions.Equip(layer);
-            return true;
-
-            //// READY - Delete after review
-            //// ----------------------------------  UO Steam  --------------------------------------
-            ////   Never fails.
-            ////   It returns Usage in white if arguments are invalid
-            ////   If item already in hand it auto-drops saying: "You are already holding an item"
-            ////   BLOCK UNTIL ACTION FINISHES
-            //// ------------------------------------------------------------------------------------
-            //Interpreter.Timeout(5000, () => {
-            //    EquipItem_item = 0;
-            //    EquipItem_layer = Layer.Invalid;
-            //    GameActions.Print($"EquipItem: TIMEOUT", hue: 0x104, type: MessageType.System);
-            //    return true;
-            //});
-            //if (EquipItem_item == 0) // Pick up the item (locking it on cursor)
-            //{
-            //    if (ItemHold.Enabled)
-            //    {
-            //        GameActions.Print($"You are already holding an item", type: MessageType.Command);
-            //        GameActions.DropItem(ItemHold.Serial, ItemHold.X, ItemHold.Y, ItemHold.Z, ItemHold.Container);
-            //        Interpreter.ClearTimeout();
-            //        return true;
-            //    }
-
-            //    var item = World.Get(argList.NextAs<uint>());
-            //    if (item == null)
-            //        throw new ScriptRunTimeError(null, "item not found");
-
-            //    EquipItem_layer = (Layer)argList.NextAs<int>();
-            //    if (EquipItem_layer == Layer.Invalid)
-            //        EquipItem_layer = (Layer)ItemHold.ItemData.Layer;
-
-            //    EquipItem_item = item.Serial;
-            //    GameActions.PickUp(item, 0, 0, 1);
-            //    GameActions.Print($"EquipItem: Picking up {EquipItem_item}", hue: 0x104, type: MessageType.System);
-            //}
-            //else if(EquipItem_layer != Layer.Invalid && ItemHold.Enabled) // Equip
-            //{
-            //    // Equip item with given layer
-            //    EquipItem_item = ItemHold.Serial;
-            //    GameActions.Equip(EquipItem_layer);
-            //    GameActions.Print($"EquipItem: Equipping up {EquipItem_item}", hue: 0x104, type: MessageType.System);
-            //}
-            //else if(World.Player.FindItemByLayer(EquipItem_layer)?.Serial == EquipItem_item)
-            //{
-            //    // Is item finally equipped?
-            //    GameActions.Print($"EquipItem: Equipped {EquipItem_item}", hue: 0x104, type: MessageType.System);
-            //    EquipItem_item = 0;
-            //    EquipItem_layer = Layer.Invalid;
-            //    Interpreter.ClearTimeout();
-            //    return true;
-            //}
-
-            //return false;
+            // ATTENTION: the logic of moving an item is used by several commands, so it was implemented as an operation
+            OperationWithItem.EquipItem(item.Serial, layer);
+            return OperationWithItem.CurrentState == OperationWithItem.State.Nothing;
         }
 
         public static bool ToggleMounted(ArgumentList argList, bool quiet, bool force)
@@ -1094,14 +1060,281 @@ namespace ClassicUO.Game.Scripting
             return true;
         }
 
-        public static bool Msg(ArgumentList argList, bool quiet, bool force)
+        public static bool HeadMsg(ArgumentList argList, bool quiet, bool force)
         {
-            GameActions.Say(
-                argList.NextAs<string>(),
-                hue: argList.NextAs<ushort>()
-                );
+            // +== UOSTEAM =========================================================================+
+            // |  - Never fails                                                                     |
+            // +====================================================================================+
+            // Read args and default to player serial
+            var msg = argList.NextAs<string>();
+            var color = argList.NextAs<ushort>();
+            var serial = argList.NextAs<uint>();
+            if (serial == 0)
+                serial = World.Player.Serial;
+
+            // Validate we have a valid serial
+            var entity = World.Get(serial);
+            if (entity == null)
+                throw new ScriptCommandError("item or mobile not found");
+
+            // Use same approach used when showing names in screen
+            MessageManager.HandleMessage
+            (
+                null,
+                msg,
+                string.Empty,
+                color,
+                MessageType.Label,
+                3,
+                TextType.CLIENT
+            );
+            entity.AddMessage
+            (
+                MessageType.Label,
+                msg,
+                3,
+                color,
+                false,
+                TextType.CLIENT
+            );
+
+            // Always succeeds
             return true;
         }
+
+        public static bool SayMsg(ArgumentList argList, bool quiet, bool force)
+        {
+            // +== UOSTEAM =========================================================================+
+            // |  - Simple (direct call) and never (ignore) fails                                   |
+            // +====================================================================================+
+            GameActions.Say(
+            argList.NextAs<string>(),
+            hue: argList.NextAs<ushort>()
+            );
+            return true;
+        }
+
+        internal static bool TimerMsg(ArgumentList argList, bool quiet, bool force)
+        {
+            // +== UOSTEAM =========================================================================+
+            // |  - Simple (direct call) and never (ignore) fails                                   |
+            // +====================================================================================+
+            GameActions.Say(
+            argList.NextAs<string>(),
+            hue: argList.NextAs<ushort>()
+            );
+            return true;
+        }
+
+        internal static bool SayPartyMsg(ArgumentList argList, bool quiet, bool force)
+        {
+            // +== UOSTEAM =========================================================================+
+            // |  - Process party commands                                                          |
+            // +====================================================================================+
+            // ATTENTION: Same logic performed by SystemChatControl, as if user typed in client
+            var text = argList.NextAs<string>();
+            switch (text.ToLower())
+            {
+                case "add":
+                    if (World.Party.Leader == 0 || World.Party.Leader == World.Player)
+                    {
+                        GameActions.RequestPartyInviteByTarget();
+                    }
+                    else
+                    {
+                        MessageManager.HandleMessage
+                        (
+                            null,
+                            ResGumps.YouAreNotPartyLeader,
+                            "System",
+                            0xFFFF,
+                            MessageType.Regular,
+                            3,
+                            TextType.SYSTEM
+                        );
+                    }
+                    break;
+                case "loot":
+
+                    if (World.Party.Leader != 0)
+                    {
+                        World.Party.CanLoot = !World.Party.CanLoot;
+                    }
+                    else
+                    {
+                        MessageManager.HandleMessage
+                        (
+                            null,
+                            ResGumps.YouAreNotInAParty,
+                            "System",
+                            0xFFFF,
+                            MessageType.Regular,
+                            3,
+                            TextType.SYSTEM
+                        );
+                    }
+                    break;
+                case "quit":
+                    if (World.Party.Leader == 0)
+                    {
+                        MessageManager.HandleMessage
+                        (
+                            null,
+                            ResGumps.YouAreNotInAParty,
+                            "System",
+                            0xFFFF,
+                            MessageType.Regular,
+                            3,
+                            TextType.SYSTEM
+                        );
+                    }
+                    else
+                    {
+                        GameActions.RequestPartyQuit();
+                    }
+                    break;
+                case "accept":
+                    if (World.Party.Leader == 0 && World.Party.Inviter != 0)
+                    {
+                        GameActions.RequestPartyAccept(World.Party.Inviter);
+                        World.Party.Leader = World.Party.Inviter;
+                        World.Party.Inviter = 0;
+                    }
+                    else
+                    {
+                        MessageManager.HandleMessage
+                        (
+                            null,
+                            ResGumps.NoOneHasInvitedYouToBeInAParty,
+                            "System",
+                            0xFFFF,
+                            MessageType.Regular,
+                            3,
+                            TextType.SYSTEM
+                        );
+                    }
+                    break;
+                case "decline":
+
+                    if (World.Party.Leader == 0 && World.Party.Inviter != 0)
+                    {
+                        NetClient.Socket.Send(new PPartyDecline(World.Party.Inviter));
+                        World.Party.Leader = 0;
+                        World.Party.Inviter = 0;
+                    }
+                    else
+                    {
+                        MessageManager.HandleMessage
+                        (
+                            null,
+                            ResGumps.NoOneHasInvitedYouToBeInAParty,
+                            "System",
+                            0xFFFF,
+                            MessageType.Regular,
+                            3,
+                            TextType.SYSTEM
+                        );
+                    }
+                    break;
+                default:
+                    if (World.Party.Leader != 0)
+                    {
+                        uint serial = 0;
+                        int pos = 0;
+                        while (pos < text.Length && text[pos] != ' ')
+                        {
+                            pos++;
+                        }
+                        if (pos < text.Length)
+                        {
+                            if (int.TryParse(text.Substring(0, pos), out int index) && index > 0 && index < 11 && World.Party.Members[index - 1] != null && World.Party.Members[index - 1].Serial != 0)
+                            {
+                                serial = World.Party.Members[index - 1].Serial;
+                            }
+                        }
+                        GameActions.SayParty(text, serial);
+                    }
+                    else
+                    {
+                        GameActions.Print
+                        (
+                            string.Format(ResGumps.NoteToSelf0, text),
+                            0,
+                            MessageType.System,
+                            3,
+                            false
+                        );
+                    }
+                    break;
+            }
+            return true;
+        }
+
+        internal static Command.Handler SayMsgType(MessageType type)
+        {
+            // +== UOSTEAM =========================================================================+
+            // |  - Simple (direct call) and never (ignore) fails                                   |
+            // |  - Colors need to be respected                                                     |
+            // +====================================================================================+
+
+            // Using currying technique so method can be reused for all the different messaging commands
+            return (argList, quiet, force) => {
+ 
+                var msg = argList.NextAs<string>();
+
+                // Select color based on msg type
+                var color = ProfileManager.CurrentProfile.SpeechHue;
+                switch (type)
+                {
+                    case MessageType.Whisper:
+                        color = ProfileManager.CurrentProfile.WhisperHue;
+                        break;
+                    case MessageType.Emote:
+                        msg = ResGeneral.EmoteChar + msg + ResGeneral.EmoteChar;
+                        color = ProfileManager.CurrentProfile.EmoteHue;
+                        break;
+                    case MessageType.Yell:
+                        color = ProfileManager.CurrentProfile.YellHue;
+                        break;
+                    case MessageType.Guild:
+                        color = ProfileManager.CurrentProfile.GuildMessageHue;
+                        break;
+                }
+
+                // Perform action of saying msg (sending pkg to server as well)
+                GameActions.Say(
+                msg,
+                type: type,
+                hue: color
+                );
+                return true;
+            };
+        }
+
+        internal static Command.Handler PrintMsgType(MessageType type)
+        {
+            // +== UOSTEAM =========================================================================+
+            // |  - Simple (direct call) and never (ignore) fails                                   |
+            // |  - Colors need to be respected                                                     |
+            // +====================================================================================+
+
+            // Using currying technique so method can be reused for all the different messaging commands
+            return (argList, quiet, force) => {
+
+                var msg = argList.NextAs<string>();
+
+                // Select color based on msg type
+                var color = ProfileManager.CurrentProfile.SpeechHue;
+
+                // Perform action of saying msg (sending pkg to server as well)
+                GameActions.Print(
+                msg,
+                type: type
+                );
+                return true;
+            };
+        }
+        
 
         private static bool SetAlias(ArgumentList argList, bool quiet, bool force)
         {
@@ -1166,6 +1399,7 @@ namespace ClassicUO.Game.Scripting
             return false;
         }
 
+        // ATTENTION: Expression implemented as a command to take advantage of the ArgumentList 
         private static bool FindAlias(ArgumentList argList, bool quiet, bool force)
         {
             var alias = argList.NextAs<string>().ToLower();

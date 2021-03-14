@@ -1,4 +1,5 @@
-﻿using ClassicUO.Game.Data;
+﻿using ClassicUO.Configuration;
+using ClassicUO.Game.Data;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -144,7 +145,7 @@ namespace ClassicUO.Game.Scripting
         }
 
         // Check if the command needs to wait before executing
-        protected bool Wait()
+        protected virtual bool Wait()
         {
             // Start checking the last time this command executed
             if (Time.Ticks - LastCmdExec > WaitTime)
@@ -161,6 +162,40 @@ namespace ClassicUO.Game.Scripting
         {
             _cmdExecutionsTracker[Keyword] = ClassicUO.Time.Ticks;
             _groupExecutionsTracker[Group] = ClassicUO.Time.Ticks;
+        }
+    }
+
+    public class MovementCommand : Command
+    {
+        // Index used to manage traversing an array request
+        public static int MoveIndex = -1;
+
+        public MovementCommand(string usage, Handler execLogic)
+            : base(usage)
+        {
+            ExecutionLogic = execLogic;
+            WaitTime = MovementSpeed.STEP_DELAY_WALK;
+            Group = CommandGroup.None;
+        }
+
+        // Wait logic supporting the variations of walking and running
+        protected override bool Wait()
+        {
+            // Select a wait time consideirnf if player is walking or running, and also checking if mounted
+            if (World.Player.FindItemByLayer(Layer.Mount) != null) // Are we mounted?
+            {
+                WaitTime = MovementSpeed.STEP_DELAY_MOUNT_WALK;
+                if (Keyword == "run" || ProfileManager.CurrentProfile.AlwaysRun)
+                    WaitTime = MovementSpeed.STEP_DELAY_MOUNT_RUN;
+            }
+            else // Otherwise we are on foot
+            {
+                WaitTime = MovementSpeed.STEP_DELAY_WALK;
+                if (Keyword == "run" || ProfileManager.CurrentProfile.AlwaysRun)
+                    WaitTime = MovementSpeed.STEP_DELAY_RUN;
+            }
+
+            return base.Wait();
         }
     }
 }

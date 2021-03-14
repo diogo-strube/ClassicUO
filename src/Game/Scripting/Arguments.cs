@@ -159,17 +159,19 @@ namespace ClassicUO.Game.Scripting
             var value = default(T);
             if (_args.Length > _index + 1) // Could we read one more argument?
             {
-                // if anything other than a string, check mapped values first (as for example a ushort Color can be "any")
-                if (typeof(T) != typeof(string))
+                try
                 {
-                    if (!GetMappedValue<T>(_definitions[++_index], value, ref value))
-                        value = _args[_index].As<T>(); // After map is checked read argument as usual
-                }
-                else
-                {   // otherwise read argument and later check value in map
                     value = _args[++_index].As<T>();
                     GetMappedValue<T>(_definitions[_index], value, ref value);
-                } 
+                }
+                catch(Exception ex)
+                {
+                    //ATTENTION: The AST Argument may fail to arse value as UO Steam supports several "mapped" values.
+                    // For example, a Color can be "any". So if we have an exception we try parsing with the default 
+                    // or mapped values registered with the ArgumentList class.
+                    if (!GetMappedValue<T>(_definitions[_index], value, ref value))
+                        value = _args[_index].As<T>(); // After map is checked read argument as usual
+                }
             }
             else if (_index + 1 >= _mandatory && _definitions.Length > _index + 1) // Nop, but this is optional, so go with default
                 value = GetDefault<T>(_definitions[++_index]);
