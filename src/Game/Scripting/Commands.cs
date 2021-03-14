@@ -133,7 +133,6 @@ namespace ClassicUO.Game.Scripting
             AddHandler("dressconfig", Dressconfig);
             
             //AddDefinition("togglescavenger", UnsupportedCmd, WaitForMs(25));
-            AddHandler("clickscreen (x) (y) ['single'/'double'] ['left'/'right']", ClickScreen);
             AddHandler("findtype (graphic) [color] [source] [amount] [range or search level]", FindType);
             AddHandler("findobject (serial) [color] [source] [amount] [range]", FindObject);
             AddHandler("poplist ('list name') ('element value'/'front'/'back')", PopList);
@@ -158,6 +157,7 @@ namespace ClassicUO.Game.Scripting
             AddHandler("waitfortarget (timeout)", WaitForTarget);
             AddHandler("pause (timeout)", Pause);
             AddHandler("target (serial)", ClickTarget);
+            AddHandler("info", Info);
 
             AddHandler("autoloot", UnsupportedCmd);
             AddHandler("toggleautoloot", UnsupportedCmd);
@@ -165,7 +165,7 @@ namespace ClassicUO.Game.Scripting
             AddHandler("promptmsg ('text')", UnsupportedCmd);
             AddHandler("waitforprompt (timeout)", UnsupportedCmd);
             AddHandler("cancelprompt", UnsupportedCmd);
-
+            AddHandler("clickscreen (x) (y) ['single'/'double'] ['left'/'right']", UnsupportedCmd);
             ////Interpreter.RegisterCommandHandler("poplist", );
             //Interpreter.RegisterCommandHandler("pushlist", );
             ////Interpreter.RegisterCommandHandler("removelist", );
@@ -1334,7 +1334,12 @@ namespace ClassicUO.Game.Scripting
                 return true;
             };
         }
-        
+
+        private static bool Info(ArgumentList argList, bool quiet, bool force)
+        {
+            CommandManager.Execute("info", "info");
+            return true;
+        }
 
         private static bool SetAlias(ArgumentList argList, bool quiet, bool force)
         {
@@ -1454,49 +1459,6 @@ namespace ClassicUO.Game.Scripting
             //    }
             //    Interpreter.Unpause();
             //});
-            return true;
-        }
-
-        private static bool ClickScreen(ArgumentList argList, bool quiet, bool force)
-        {
-            // Read command arguments
-            var mouseX = argList.NextAs<int>();
-            var mouseY = argList.NextAs<int>();
-            Mouse.Position.X = mouseX;
-            Mouse.Position.Y = mouseY;
-            var clickType = argList.NextAs<string>();
-            MouseButtonType buttonType = MouseButtonType.Left;
-            if (argList.NextAs<string>() == "right")
-                buttonType = MouseButtonType.Right;
-
-            // STOP - can we use DelayedObjectClickManager.Set(ent.Serial, Mouse.Position.X, Mouse.Position.Y, Time.Ticks + Mouse.MOUSE_DELAY_DOUBLE_CLICK); ????????????
-
-            // Get scene and inject mouse down logic
-            GameScene gs = Client.Game.GetScene<GameScene>();
-            if (clickType == string.Empty || clickType == "single")
-            {
-                UIManager.OnMouseButtonDown(buttonType);
-                gs.OnMouseDown(buttonType);
-            }
-            else
-            {
-                UIManager.OnMouseDoubleClick(buttonType);
-                gs.OnMouseDoubleClick(buttonType);
-            }
-
-            // Because mouse  logic is nested with draw logic, we need to force for the game to darw
-            Interpreter.Pause(60000);
-            //Task.Run(() =>
-            // {
-            //     Mouse.Position.X = mouseX;
-            //     Mouse.Position.Y = mouseY;
-            //     Mouse.ButtonRelease(buttonType);
-            //     UIManager.OnMouseButtonUp(buttonType);
-            //     gs.OnMouseUp(buttonType);
-            //     Mouse.Update(); // reset mouse with real inout
-            //     Thread.Sleep(100); // keep iteration (next frame?)
-            //     Interpreter.Unpause();
-            // });
             return true;
         }
 
