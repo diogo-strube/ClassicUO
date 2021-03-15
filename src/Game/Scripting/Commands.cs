@@ -97,15 +97,7 @@ namespace ClassicUO.Game.Scripting
             Profiles.Add("dressconfig-temporary", new List<uint>());
             Profiles.Add("temporary-generic", new List<uint>());
 
-            // Add definitions for all supported commands
-            AddHandler("setability ('primary'/'secondary'/'stun'/'disarm') ['on'/'off']", SetAbility);
-            AddHandler("attack (serial)", Attack);
-            AddHandler("clearhands ('left'/'right'/'both')", ClearHands, 800, CommandGroup.PickUp);
-            AddHandler("clickobject (serial)", ClickObject);
-            AddHandler("bandageself", BandageSelf);
-            AddHandler("usetype (graphic) [color] [source] [range or search level]", UseType);
-            AddHandler("useobject (serial)", UseObject);
-            AddHandler("useonce (graphic) [color]", UseOnce);
+            // Heavly tested Commands
             AddHandler("moveitem (serial) (destination) [(x, y, z)] [amount]", MoveItem, 800, CommandGroup.PickUp);
             AddHandler("moveitemoffset (serial) (destination) [(x, y, z)] [amount]", MoveItemOffset, 800, CommandGroup.PickUp);
             AddHandler("movetype (graphic) (source) (destination) [(x, y, z)] [color] [amount] [range or search level]", MoveType, 800, CommandGroup.PickUp);
@@ -113,32 +105,10 @@ namespace ClassicUO.Game.Scripting
             AddHandler(new MovementCommand("walk (direction)", WalkTurnRun(false)));
             AddHandler(new MovementCommand("turn (direction)", WalkTurnRun(false)));
             AddHandler(new MovementCommand("run (direction)", WalkTurnRun(true)));
-            AddHandler("useskill ('skill name'/'last')", UseSkill);
-            AddHandler("feed (serial) ('food name'/'food group'/'any'/graphic) [color] [amount]", Feed);
-            AddHandler("rename (serial) ('name')", Rename);
-            AddHandler("shownames ['mobiles'/'corpses']", ShowNames);
+            AddHandler("clearhands ('left'/'right'/'both')", ClearHands, 800, CommandGroup.PickUp);
             AddHandler("togglehands ('left'/'right')", ToggleHands, 800, CommandGroup.PickUp);
             AddHandler("equipitem (serial) [layer]", EquipItem, 800, CommandGroup.PickUp);
             AddHandler("togglemounted", ToggleMounted, 800);
-            //AddDefinition("equipwand ('spell name'/'any'/'undefined') [minimum charges]", EquipWand, WaitForMs(500), Command.Attributes.ComplexInterAction);
-            //AddDefinition("buy ('list name')", Buy, WaitForMs(500), Command.Attributes.ComplexInterAction);
-            //AddDefinition("sell ('list name')", Sell, WaitForMs(500), Command.Attributes.ComplexInterAction);
-            //AddDefinition("clearbuy", ClearBuy, WaitForMs(500), Command.Attributes.ComplexInterAction);
-            //AddDefinition("clearsell", ClearSell, WaitForMs(500), Command.Attributes.ComplexInterAction);
-            //AddDefinition("organizer ('profile name') [source] [destination]", Organizer, WaitForMs(500), Command.Attributes.ComplexInterAction);
-            //AddDefinition("organizing", Organizing, WaitForMs(500), Command.Attributes.ComplexInterAction);
-            
-            AddHandler("dress ['profile name']", Dress);
-            AddHandler("undress ['profile name']", Undress);
-            AddHandler("dressconfig", Dressconfig);
-            
-            //AddDefinition("togglescavenger", UnsupportedCmd, WaitForMs(25));
-            AddHandler("findtype (graphic) [color] [source] [amount] [range or search level]", FindType);
-            AddHandler("findobject (serial) [color] [source] [amount] [range]", FindObject);
-            AddHandler("poplist ('list name') ('element value'/'front'/'back')", PopList);
-            AddHandler("pushlist ('list name') ('element value') ['front'/'back']", PushList);
-            AddHandler("createlist ('list name')", CreateList);
-            AddHandler("removelist ('list name')", RemoveList);
             AddHandler("msg ('text') [color]", SayMsg, 800);
             AddHandler("partymsg ('text')", SayPartyMsg, 800);
             AddHandler("guildmsg ('text')", SayMsgType(MessageType.Guild), 800);
@@ -148,17 +118,51 @@ namespace ClassicUO.Game.Scripting
             AddHandler("sysmsg ('text')", PrintMsgType(MessageType.System), 800);
             AddHandler("emotemsg ('text')", SayMsgType(MessageType.Emote), 800);
             AddHandler("headmsg ('text') [color] [serial]", HeadMsg, 800);
+            AddHandler("pause (timeout)", Pause);
+            AddHandler("promptalias ('alias name')", PromptAlias);
+
+            // Tested Commands
+            AddHandler("attack (serial)", Attack);
+            AddHandler("setability ('primary'/'secondary'/'stun'/'disarm') ['on'/'off']", SetAbility);
+            AddHandler("findtype (graphic) [color] [source] [amount] [range or search level]", FindType);
+            AddHandler("bandageself", BandageSelf);
+
+            // Accepted Commands (but need more testing to guarantee robustness)
+            AddHandler("clickobject (serial)", ClickObject);          
+            AddHandler("usetype (graphic) [color] [source] [range or search level]", UseType);
+            AddHandler("useobject (serial)", UseObject);
+            AddHandler("useonce (graphic) [color]", UseOnce);         
+            AddHandler("useskill ('skill name'/'last')", UseSkill);
+            AddHandler("feed (serial) ('food name'/'food group'/'any'/graphic) [color] [amount]", Feed);
+            AddHandler("rename (serial) ('name')", Rename);
+            AddHandler("shownames ['mobiles'/'corpses']", ShowNames);
+            AddHandler("info", Info);
+            AddHandler("ping", Ping);
+            //AddDefinition("equipwand ('spell name'/'any'/'undefined') [minimum charges]", EquipWand, WaitForMs(500), Command.Attributes.ComplexInterAction);
+            //AddDefinition("buy ('list name')", Buy, WaitForMs(500), Command.Attributes.ComplexInterAction);
+            //AddDefinition("sell ('list name')", Sell, WaitForMs(500), Command.Attributes.ComplexInterAction);
+            //AddDefinition("clearbuy", ClearBuy, WaitForMs(500), Command.Attributes.ComplexInterAction);
+            //AddDefinition("clearsell", ClearSell, WaitForMs(500), Command.Attributes.ComplexInterAction);
+            //AddDefinition("organizer ('profile name') [source] [destination]", Organizer, WaitForMs(500), Command.Attributes.ComplexInterAction);
+            //AddDefinition("organizing", Organizing, WaitForMs(500), Command.Attributes.ComplexInterAction);
+            AddHandler("dress ['profile name']", Dress);
+            AddHandler("undress ['profile name']", Undress);
+            AddHandler("dressconfig", Dressconfig);          
+            //AddDefinition("togglescavenger", UnsupportedCmd, WaitForMs(25));         
+            AddHandler("findobject (serial) [color] [source] [amount] [range]", FindObject);
+            AddHandler("poplist ('list name') ('element value'/'front'/'back')", PopList);
+            AddHandler("pushlist ('list name') ('element value') ['front'/'back']", PushList);
+            AddHandler("createlist ('list name')", CreateList);
+            AddHandler("removelist ('list name')", RemoveList);           
             AddHandler("timermsg ('timer name') [color]", TimerMsg, 800);
             AddHandler("setalias ('alias name') [serial]", SetAlias);
-            AddHandler("unsetalias ('alias name')", UnsetAlias);
-            AddHandler("promptalias ('alias name')", PromptAlias);
+            AddHandler("unsetalias ('alias name')", UnsetAlias);    
             AddHandler("findalias ('alias name')", FindAlias);
             AddHandler("waitforgump (gump id/'any') (timeout)", WaitForGump);
-            AddHandler("waitfortarget (timeout)", WaitForTarget);
-            AddHandler("pause (timeout)", Pause);
+            AddHandler("waitfortarget (timeout)", WaitForTarget);         
             AddHandler("target (serial)", ClickTarget);
-            AddHandler("info", Info);
-
+                   
+            // Unsupprted
             AddHandler("autoloot", UnsupportedCmd);
             AddHandler("toggleautoloot", UnsupportedCmd);
             AddHandler("chatmsg ('text')", UnsupportedCmd);
@@ -166,55 +170,22 @@ namespace ClassicUO.Game.Scripting
             AddHandler("waitforprompt (timeout)", UnsupportedCmd);
             AddHandler("cancelprompt", UnsupportedCmd);
             AddHandler("clickscreen (x) (y) ['single'/'double'] ['left'/'right']", UnsupportedCmd);
+            AddHandler("resync", UnsupportedCmd);
+            AddHandler("clearuseonce", UnsupportedCmd);
+            
             ////Interpreter.RegisterCommandHandler("poplist", );
             //Interpreter.RegisterCommandHandler("pushlist", );
             ////Interpreter.RegisterCommandHandler("removelist", );
             ////Interpreter.RegisterCommandHandler("createlist", CreateList);
-
-            //Interpreter.RegisterCommandHandler("findtype", FindType);
             //Interpreter.RegisterCommandHandler("fly", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("land", UnimplementedCommand);
-
-            //Interpreter.RegisterCommandHandler("useobject", UseObject);
-            //Interpreter.RegisterCommandHandler("moveitem", MoveItem);
-
-
-
-
-
-
-            //Interpreter.RegisterExpressionHandler("findobject", ExpFindObject);
-
-            //#region Deprecated (but supported)
-            //Interpreter.RegisterCommandHandler("clearuseonce", Deprecated);
-            //#endregion
-
-            //#region Deprecated (not supported)
-            //Interpreter.RegisterCommandHandler("autoloot", Deprecated);
-            //Interpreter.RegisterCommandHandler("toggleautoloot", Deprecated);
-            //#endregion
-
-
-
-            //Interpreter.RegisterCommandHandler("msg", Msg);
-
-            //Interpreter.RegisterCommandHandler("pause", Pause);
-
-
             ////Interpreter.RegisterCommandHandler("togglescavenger", ToggleScavenger);
-
-            ////Interpreter.RegisterCommandHandler("promptalias", PromptAlias);
             ////Interpreter.RegisterCommandHandler("waitforgump", WaitForGump);
             ////Interpreter.RegisterCommandHandler("clearjournal", ClearJournal);
             ////Interpreter.RegisterCommandHandler("waitforjournal", WaitForJournal);
-
             ////Interpreter.RegisterCommandHandler("clearlist", ClearList);
-            ////Interpreter.RegisterCommandHandler("ping", Ping);
-            ////Interpreter.RegisterCommandHandler("resync", Resync);
             ////Interpreter.RegisterCommandHandler("messagebox", MessageBox);
             ////Interpreter.RegisterCommandHandler("paperdoll", Paperdoll);
-            ////Interpreter.RegisterCommandHandler("headmsg", HeadMsg);
-            ////Interpreter.RegisterCommandHandler("sysmsg", SysMsg);
             ////Interpreter.RegisterCommandHandler("cast", Cast);
             ////Interpreter.RegisterCommandHandler("waitfortarget", WaitForTarget);
             ////Interpreter.RegisterCommandHandler("canceltarget", CancelTarget);
@@ -227,11 +198,6 @@ namespace ClassicUO.Game.Scripting
             ////Interpreter.RegisterCommandHandler("settimer", SetTimer);
             ////Interpreter.RegisterCommandHandler("removetimer", RemoveTimer);
             ////Interpreter.RegisterCommandHandler("createtimer", CreateTimer);
-
-
-
-
-            //Interpreter.RegisterCommandHandler("info", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("playmacro", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("playsound", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("snapshot", UnimplementedCommand);
@@ -244,13 +210,6 @@ namespace ClassicUO.Game.Scripting
             //Interpreter.RegisterCommandHandler("questsbutton", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("logoutbutton", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("virtue", UnimplementedCommand);
-            //Interpreter.RegisterCommandHandler("partymsg", UnimplementedCommand);
-            //Interpreter.RegisterCommandHandler("guildmsg", UnimplementedCommand);
-            //Interpreter.RegisterCommandHandler("allymsg", UnimplementedCommand);
-            //Interpreter.RegisterCommandHandler("whispermsg", UnimplementedCommand);
-            //Interpreter.RegisterCommandHandler("yellmsg", UnimplementedCommand);
-            //Interpreter.RegisterCommandHandler("chatmsg", UnimplementedCommand);
-            //Interpreter.RegisterCommandHandler("emotemsg", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("promptmsg", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("timermsg", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("waitforprompt", UnimplementedCommand);
@@ -268,11 +227,6 @@ namespace ClassicUO.Game.Scripting
             //Interpreter.RegisterCommandHandler("miniheal", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("bigheal", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("chivalryheal", UnimplementedCommand);
-            //Interpreter.RegisterCommandHandler("moveitemoffset", UnimplementedCommand);
-            //Interpreter.RegisterCommandHandler("movetype", UnimplementedCommand);
-            //Interpreter.RegisterCommandHandler("movetypeoffset", UnimplementedCommand);
-            //Interpreter.RegisterCommandHandler("togglemounted", UnimplementedCommand);
-            //Interpreter.RegisterCommandHandler("equipwand", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("buy", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("sell", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("clearbuy", UnimplementedCommand);
@@ -1539,19 +1493,11 @@ namespace ClassicUO.Game.Scripting
 
 
 
-        ////private static bool Ping(string command, ParameterList args)
-        ////{
-        ////    Assistant.Ping.StartPing(5);
-
-        ////    return true;
-        ////}
-
-        ////private static bool Resync(string command, ParameterList args)
-        ////{
-        ////    Client.Instance.SendToServer(new ResyncReq());
-
-        ////    return true;
-        ////}
+        private static bool Ping(ArgumentList argList, bool quiet, bool force)
+        {
+            NetClient.Socket.Send(new PPing());
+            return true;
+        }
 
         ////private static bool MessageBox(string command, ParameterList args)
         ////{
