@@ -30,10 +30,15 @@ using ClassicUO.Game.Data;
 using ClassicUO.Game.GameObjects;
 using ClassicUO.Game.Managers;
 using ClassicUO.Game.Scenes;
+using ClassicUO.Game.UI.Controls;
 using ClassicUO.Game.UI.Gumps;
 using ClassicUO.Input;
+using ClassicUO.IO.Audio;
+using ClassicUO.IO.Resources;
 using ClassicUO.Network;
 using ClassicUO.Resources;
+using Microsoft.Xna.Framework;
+using SDL2;
 
 namespace ClassicUO.Game.Scripting
 {
@@ -126,12 +131,14 @@ namespace ClassicUO.Game.Scripting
             AddHandler("setability ('primary'/'secondary'/'stun'/'disarm') ['on'/'off']", SetAbility);
             AddHandler("findtype (graphic) [color] [source] [amount] [range or search level]", FindType);
             AddHandler("bandageself", BandageSelf);
-
-            // Accepted Commands (but need more testing to guarantee robustness)
-            AddHandler("clickobject (serial)", ClickObject);          
+            AddHandler("paperdoll [serial]", Paperdoll);
+            AddHandler("clickobject (serial)", ClickObject);
             AddHandler("usetype (graphic) [color] [source] [range or search level]", UseType);
             AddHandler("useobject (serial)", UseObject);
-            AddHandler("useonce (graphic) [color]", UseOnce);         
+            AddHandler("useonce (graphic) [color]", UseOnce);
+            AddHandler("messagebox ('title') ('body')", MessageBox);
+
+            // Accepted Commands (but need more testing to guarantee robustness)
             AddHandler("useskill ('skill name'/'last')", UseSkill);
             AddHandler("feed (serial) ('food name'/'food group'/'any'/graphic) [color] [amount]", Feed);
             AddHandler("rename (serial) ('name')", Rename);
@@ -161,7 +168,10 @@ namespace ClassicUO.Game.Scripting
             AddHandler("waitforgump (gump id/'any') (timeout)", WaitForGump);
             AddHandler("waitfortarget (timeout)", WaitForTarget);         
             AddHandler("target (serial)", ClickTarget);
-                   
+            AddHandler("playsound (sound id/'file name')", PlaySound);
+            AddHandler("playmacro ('macro name')", PlayMacro);
+            AddHandler("clearjournal", ClearJournal);
+
             // Unsupprted
             AddHandler("autoloot", UnsupportedCmd);
             AddHandler("toggleautoloot", UnsupportedCmd);
@@ -173,19 +183,13 @@ namespace ClassicUO.Game.Scripting
             AddHandler("resync", UnsupportedCmd);
             AddHandler("clearuseonce", UnsupportedCmd);
             
-            ////Interpreter.RegisterCommandHandler("poplist", );
-            //Interpreter.RegisterCommandHandler("pushlist", );
-            ////Interpreter.RegisterCommandHandler("removelist", );
-            ////Interpreter.RegisterCommandHandler("createlist", CreateList);
             //Interpreter.RegisterCommandHandler("fly", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("land", UnimplementedCommand);
             ////Interpreter.RegisterCommandHandler("togglescavenger", ToggleScavenger);
             ////Interpreter.RegisterCommandHandler("waitforgump", WaitForGump);
-            ////Interpreter.RegisterCommandHandler("clearjournal", ClearJournal);
             ////Interpreter.RegisterCommandHandler("waitforjournal", WaitForJournal);
             ////Interpreter.RegisterCommandHandler("clearlist", ClearList);
             ////Interpreter.RegisterCommandHandler("messagebox", MessageBox);
-            ////Interpreter.RegisterCommandHandler("paperdoll", Paperdoll);
             ////Interpreter.RegisterCommandHandler("cast", Cast);
             ////Interpreter.RegisterCommandHandler("waitfortarget", WaitForTarget);
             ////Interpreter.RegisterCommandHandler("canceltarget", CancelTarget);
@@ -198,8 +202,7 @@ namespace ClassicUO.Game.Scripting
             ////Interpreter.RegisterCommandHandler("settimer", SetTimer);
             ////Interpreter.RegisterCommandHandler("removetimer", RemoveTimer);
             ////Interpreter.RegisterCommandHandler("createtimer", CreateTimer);
-            //Interpreter.RegisterCommandHandler("playmacro", UnimplementedCommand);
-            //Interpreter.RegisterCommandHandler("playsound", UnimplementedCommand);
+            
             //Interpreter.RegisterCommandHandler("snapshot", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("hotkeys", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("where", UnimplementedCommand);
@@ -1449,7 +1452,6 @@ namespace ClassicUO.Game.Scripting
             //return true;
         }
 
-        private static int Pause_Time = 0;
         private static bool Pause(ArgumentList argList, bool quiet, bool force)
         {
             Interpreter.Pause(argList.NextAs<int>());
@@ -1463,12 +1465,68 @@ namespace ClassicUO.Game.Scripting
             return true;
         }
 
-        ////private static bool ClearJournal(string command, ParameterList args)
-        ////{
-        ////    Journal.Clear();
+        private static bool PlaySound(ArgumentList argList, bool quiet, bool force)
+        {
+            // +== UOSTEAM =========================================================================+
+            // |  - Name of sound does not need to be perfect match with .wav                       |
+            // +====================================================================================+
+            var sound = argList.NextAs<string>();
+            int soundID;
+            if (int.TryParse(sound, out soundID))
+            {
+                Client.Game.Scene.Audio.PlaySound(soundID);
+            }
+            else
+            {
+                for(int i = 0; i < Constants.MAX_SOUND_DATA_INDEX_COUNT; i++)
+                {
+                    Sound s = SoundsLoader.Instance.GetSound(i);
+                    if (s != null && s.Name.Contains(sound))
+                    {
+                        Client.Game.Scene.Audio.PlaySound(s.Index);
+                        break;
+                    }
+                    
+                }
+            }
+            
+            return true;
+        }
 
-        ////    return true;
-        ////}
+        private static bool PlayMacro(ArgumentList argList, bool quiet, bool force)
+        {
+            // +== UOSTEAM =========================================================================+
+            // |  - IMPOSSIBLE TO MATCH BEHAVIOR - we don't have UO Steam Macros, but CUO Macros    |
+            // +====================================================================================+
+            MacroManager manager = Client.Game.GetScene<GameScene>().Macros;
+            var macro = manager.FindMacro(argList.NextAs<string>());
+            if (macro != null && macro.Items != null && macro.Items is MacroObject mac)
+            {
+                manager.SetMacroToExecute(mac);
+                manager.WaitingBandageTarget = false;
+                manager.WaitForTargetTimer = 0;
+                manager.Update();
+            }
+            else
+            {
+                throw new ScriptCommandError("Macro not found, name is case sensitive");
+            }
+
+            return true;
+        }
+
+        private static bool ClearJournal(ArgumentList argList, bool quiet, bool force)
+        {
+            JournalManager.Entries.Clear();
+            JournalGump journalGump = UIManager.GetGump<JournalGump>();
+            if (journalGump != null)
+            {
+                var newJournal = new JournalGump { X = journalGump.X, Y = journalGump.Y };
+                journalGump.Dispose();
+                UIManager.Add(newJournal);
+            }
+            return true;
+        }
 
         ////private static bool WaitForJournal(string command, ParameterList args)
         ////{
@@ -1499,27 +1557,75 @@ namespace ClassicUO.Game.Scripting
             return true;
         }
 
-        ////private static bool MessageBox(string command, ParameterList args)
-        ////{
-        ////    if (args.Length != 2)
-        ////        throw new RunTimeError(null, "Usage: messagebox ('title') ('body')");
+        private static Gump messageBox_gump = null;
+        private static bool MessageBox(ArgumentList argList, bool quiet, bool force)
+        {
+            // +== UOSTEAM =========================================================================+
+            // |  - MessageBox does not block script from running                                   |
+            // |  - Consecutive calls replace the message box                                       |
+            // +====================================================================================+
+            //ATTENTION: No existing dependency to Windows Form, but we alreay use SDL. Unfortunatly, the behavior in UO Steam is to NOT block the game...
+            //SDL.SDL_ShowSimpleMessageBox(SDL.SDL_MessageBoxFlags.SDL_MESSAGEBOX_INFORMATION, argList.NextAs<string>(), argList.NextAs<string>(), IntPtr.Zero);
+            // So we make a simple Gump instead
+            var text = $"{argList.NextAs<string>()}-{argList.NextAs<string>()}";
+            if (messageBox_gump != null)
+                messageBox_gump.Dispose();
 
-        ////    System.Windows.Forms.MessageBox.Show(args[0].As<string>(), args[1].As<string>());
+            var newMsgBox = new MacroButtonGump(new Macro(text), 50, 50);
+            messageBox_gump = newMsgBox;
+            UIManager.Add(newMsgBox);
 
-        ////    return true;
-        ////}
+            newMsgBox.SetInScreen();
+            newMsgBox.BringOnTop();
+            return true;
+        }
 
+        private static bool Paperdoll(ArgumentList argList, bool quiet, bool force)
+        {
+            // +== UOSTEAM =========================================================================+
+            // |  - Beyond a basic double click as even animals get a bugged Paperdoll open         |
+            // |  - Titles are not retrieved as it does not ping the server                         |
+            // |  - Original doc states Serial as mandatory, but testing showed it was optional     |
+            // +====================================================================================+
+            // ATTENTION: same code of the Paperdoll pkg handling
+            var serial = argList.NextAs<uint>();
+            if (serial == 0)
+                serial = World.Player.Serial;
 
+            Mobile mobile = World.Mobiles.Get(serial);
+            if (mobile == null)
+                throw new ScriptCommandError("mobile not found");
 
-        //private static bool Paperdoll(string command, ParameterList args)
-        //{
-        //    if (args.Length > 1)
-        //        throw new RunTimeError(null, "Usage: paperdoll [serial]");
+            string text = (mobile.Title == string.Empty) ? mobile.Name : mobile.Title;
+            mobile.Title = text;
+            PaperDollGump paperdoll = UIManager.GetGump<PaperDollGump>(mobile);
+            if (paperdoll == null)
+            {
+                if (!UIManager.GetGumpCachePosition(mobile, out Point location))
+                {
+                    location = new Point(100, 100);
+                }
 
-        //    GameActions.DoubleClick(serial);
+                UIManager.Add(new PaperDollGump(mobile, true) { Location = location });
+            }
+            else
+            {
+                bool old = paperdoll.CanLift;
+                bool newLift = true;//(flags & 0x02) != 0;
 
-        //    return true;
-        //}
+                paperdoll.CanLift = newLift;
+                paperdoll.UpdateTitle(text);
+
+                if (old != newLift)
+                {
+                    paperdoll.RequestUpdateContents();
+                }
+
+                paperdoll.SetInScreen();
+                paperdoll.BringOnTop();
+            }
+            return true;
+        }
 
         //public static bool Cast(string command, ParameterList args)
         //{
