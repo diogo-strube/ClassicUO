@@ -167,6 +167,9 @@ namespace ClassicUO.Game.Scripting
             AddHandler("playsound (sound id/'file name')", PlaySound);
             AddHandler("playmacro ('macro name')", PlayMacro);
             AddHandler("clearjournal", ClearJournal);
+            AddHandler("waitforjournal ('text') (timeout) ['author'/'system']", WaitForJournal);
+            AddHandler("clearlist", ClearList);
+            AddHandler("canceltarget", CancelTarget);
 
             // Unsupprted
             AddHandler("autoloot", UnsupportedCmd);
@@ -178,14 +181,14 @@ namespace ClassicUO.Game.Scripting
             AddHandler("clickscreen (x) (y) ['single'/'double'] ['left'/'right']", UnsupportedCmd);
             AddHandler("resync", UnsupportedCmd);
             AddHandler("clearuseonce", UnsupportedCmd);
+            AddHandler("where", Where);
 
             //Interpreter.RegisterCommandHandler("fly", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("land", UnimplementedCommand);
             ////Interpreter.RegisterCommandHandler("togglescavenger", ToggleScavenger);
-            AddHandler("waitforjournal ('text') (timeout) ['author'/'system']", WaitForJournal);
-            AddHandler("clearlist", ClearList);
+
             ////Interpreter.RegisterCommandHandler("cast", Cast);
-            AddHandler("canceltarget", CancelTarget);
+
             ////Interpreter.RegisterCommandHandler("target", Target);
             ////Interpreter.RegisterCommandHandler("targettype", TargetType);
             ////Interpreter.RegisterCommandHandler("targetground", TargetGround);
@@ -198,7 +201,7 @@ namespace ClassicUO.Game.Scripting
 
             //Interpreter.RegisterCommandHandler("snapshot", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("hotkeys", UnimplementedCommand);
-            AddHandler("where", Where);
+
             //Interpreter.RegisterCommandHandler("mapuo", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("clickscreen", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("helpbutton", UnimplementedCommand);
