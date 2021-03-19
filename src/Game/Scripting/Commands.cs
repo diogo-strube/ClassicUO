@@ -24,21 +24,17 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using ClassicUO.Configuration;
 using ClassicUO.Game.Data;
 using ClassicUO.Game.GameObjects;
 using ClassicUO.Game.Managers;
 using ClassicUO.Game.Scenes;
-using ClassicUO.Game.UI.Controls;
 using ClassicUO.Game.UI.Gumps;
-using ClassicUO.Input;
 using ClassicUO.IO.Audio;
 using ClassicUO.IO.Resources;
 using ClassicUO.Network;
 using ClassicUO.Resources;
 using Microsoft.Xna.Framework;
-using SDL2;
 
 namespace ClassicUO.Game.Scripting
 {
@@ -182,17 +178,14 @@ namespace ClassicUO.Game.Scripting
             AddHandler("clickscreen (x) (y) ['single'/'double'] ['left'/'right']", UnsupportedCmd);
             AddHandler("resync", UnsupportedCmd);
             AddHandler("clearuseonce", UnsupportedCmd);
-            
+
             //Interpreter.RegisterCommandHandler("fly", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("land", UnimplementedCommand);
             ////Interpreter.RegisterCommandHandler("togglescavenger", ToggleScavenger);
-            ////Interpreter.RegisterCommandHandler("waitforgump", WaitForGump);
-            ////Interpreter.RegisterCommandHandler("waitforjournal", WaitForJournal);
-            ////Interpreter.RegisterCommandHandler("clearlist", ClearList);
-            ////Interpreter.RegisterCommandHandler("messagebox", MessageBox);
+            AddHandler("waitforjournal ('text') (timeout) ['author'/'system']", WaitForJournal);
+            AddHandler("clearlist", ClearList);
             ////Interpreter.RegisterCommandHandler("cast", Cast);
-            ////Interpreter.RegisterCommandHandler("waitfortarget", WaitForTarget);
-            ////Interpreter.RegisterCommandHandler("canceltarget", CancelTarget);
+            AddHandler("canceltarget", CancelTarget);
             ////Interpreter.RegisterCommandHandler("target", Target);
             ////Interpreter.RegisterCommandHandler("targettype", TargetType);
             ////Interpreter.RegisterCommandHandler("targetground", TargetGround);
@@ -202,10 +195,10 @@ namespace ClassicUO.Game.Scripting
             ////Interpreter.RegisterCommandHandler("settimer", SetTimer);
             ////Interpreter.RegisterCommandHandler("removetimer", RemoveTimer);
             ////Interpreter.RegisterCommandHandler("createtimer", CreateTimer);
-            
+
             //Interpreter.RegisterCommandHandler("snapshot", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("hotkeys", UnimplementedCommand);
-            //Interpreter.RegisterCommandHandler("where", UnimplementedCommand);
+            AddHandler("where", Where);
             //Interpreter.RegisterCommandHandler("mapuo", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("clickscreen", UnimplementedCommand);
             //Interpreter.RegisterCommandHandler("helpbutton", UnimplementedCommand);
@@ -1428,28 +1421,6 @@ namespace ClassicUO.Game.Scripting
                 return true;
             }
             else return false;
-            //return !TargetManager.IsTargeting;
-
-            //var timeout = argList.NextAs<int>();
-
-            //Interpreter.Pause(timeout);
-            //Task.Run(() =>
-            //{
-            //    // Take a snapshot of all existing gumps
-            //    var gumpsSnapshot = UIManager.Gumps.ToArray();
-
-            //    DateTime startTime = DateTime.UtcNow;
-            //    while (DateTime.UtcNow - startTime < TimeSpan.FromMilliseconds(timeout))
-            //    {
-            //        if (TargetManager.IsTargeting)
-            //            break;
-            //        else
-            //            Thread.Sleep(25); // keep iteration
-            //    }
-            //    Interpreter.Unpause();
-            //});
-
-            //return true;
         }
 
         private static bool Pause(ArgumentList argList, bool quiet, bool force)
@@ -1528,19 +1499,35 @@ namespace ClassicUO.Game.Scripting
             return true;
         }
 
-        ////private static bool WaitForJournal(string command, ParameterList args)
-        ////{
-        ////    if (args.Length < 2)
-        ////        throw new RunTimeError(null, "Usage: waitforjournal ('text') (timeout) ['author'/'system']");
+        private static int WaitForJournal_Index = 0;
+        private static bool WaitForJournal(ArgumentList argList, bool quiet, bool force)
+        {
+            var text = argList.NextAs<string>();
+            var timeout = argList.NextAs<int>();
+            var type = argList.NextAs<string>();
 
-        ////    if (!Journal.ContainsSafe(args[0].As<string>()))
-        ////    {
-        ////        Interpreter.Timeout(args[1].AsUInt(), () => { return true; });
-        ////        return false;
-        ////    }
+            if (WaitForJournal_Index == 0)
+            {
+                WaitForJournal_Index = JournalManager.Entries.Count - 1;
+                Interpreter.Timeout(timeout, () => {
+                    WaitForJournal_Index = 0;
+                    return true;
+                });
+            }
 
-        ////    return true;
-        ////}
+            for(; WaitForJournal_Index < JournalManager.Entries.Count; WaitForJournal_Index++)
+            {
+                if(JournalManager.Entries[WaitForJournal_Index].Text.IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    //if(type != string.Empty && JournalManager.Entries[WaitForJournal_Index].TextType == TextType.)
+                    WaitForJournal_Index = 0;
+                    Interpreter.ClearTimeout();
+                    return true;
+                }
+            }
+
+            return false;
+        }
 
         ////public static bool ToggleScavenger(string command, ParameterList args)
         ////{
@@ -1659,16 +1646,19 @@ namespace ClassicUO.Game.Scripting
         //    return true;
         //}
 
-        //private static bool CancelTarget(string command, ParameterList args)
-        //{
-        //    if (args.Length != 0)
-        //        throw new RunTimeError(null, "Usage: canceltarget");
+        private static bool CancelTarget(ArgumentList argList, bool quiet, bool force)
+        {
+            if (TargetManager.IsTargeting)
+                TargetManager.CancelTarget();
+            return true;
+        }
 
-        //    if (Targeting.HasTarget)
-        //        Targeting.CancelOneTimeTarget();
-
-        //    return true;
-        //}
+        private static bool Where(ArgumentList argList, bool quiet, bool force)
+        {
+            GameActions.Print($"Location: {World.Player.X}, {World.Player.Y}, {World.Player.Z}");
+            return true;
+        }
+        
 
         //private static bool Target(string command, ParameterList args)
         //{
