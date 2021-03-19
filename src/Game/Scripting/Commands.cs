@@ -29,6 +29,7 @@ using ClassicUO.Game.Data;
 using ClassicUO.Game.GameObjects;
 using ClassicUO.Game.Managers;
 using ClassicUO.Game.Scenes;
+using ClassicUO.Game.UI.Controls;
 using ClassicUO.Game.UI.Gumps;
 using ClassicUO.IO.Audio;
 using ClassicUO.IO.Resources;
@@ -1365,54 +1366,33 @@ namespace ClassicUO.Game.Scripting
             return Aliases.Read<uint>(alias, ref value);
         }
 
+        private static LinkedListNode<Gump> WaitForGump_CurrentFirst = null;
         private static bool WaitForGump(ArgumentList argList, bool quiet, bool force)
         {
             var gumpid = argList.NextAs<uint>(); // GumpID is also a serial
             var timeout = argList.NextAs<int>(); // Timeout in ms
 
-            Interpreter.Pause(60000);
-            //Task.Run(() =>
-            //{
-            //    // Take a snapshot of all existing gumps
-            //    var gumpsSnapshot = UIManager.Gumps.ToArray();
+            if (WaitForGump_CurrentFirst == null)
+            {
+                WaitForGump_CurrentFirst = UIManager.Gumps.First;
+                Interpreter.Timeout(timeout, () => {
+                    WaitForGump_CurrentFirst = null;
+                    return true;
+                });
+            }
+            else
+            {
+                for (LinkedListNode<Gump> first = UIManager.Gumps.First; first != null; first = first.Next)
+                {
+                    Control c = first.Value;
 
-            //    DateTime startTime = DateTime.UtcNow;
-            //    while (DateTime.UtcNow - startTime < TimeSpan.FromMilliseconds(timeout))
-            //    {
-            //        if (gumpid == 0 /*Zero value is Any*/) // any new gump was added
-            //        {
-            //            // For each existing gump
-            //            for (LinkedListNode<Gump> first = UIManager.Gumps.First; first != null; first = first.Next)
-            //            {
-            //                // If its new (does not exist in snapshot)
-            //                if(!gumpsSnapshot.Contains(first.Value))
-            //                {
-            //                    // Stop waiting if its in an interactable state
-            //                    if (first.Value.IsModal || first.Value.IsVisible || first.Value.IsEnabled)
-            //                    {
-            //                        Interpreter.Unpause();
-            //                        return;
-            //                    }
-            //                }
-            //            }
-            //        }
-            //        else
-            //        {
-            //            var specificGump = UIManager.GetGump(gumpid);
-            //            // Requested gump exists and is visible
-            //            if (specificGump != null && (specificGump.IsModal && !specificGump.IsModal || !specificGump.IsVisible || !specificGump.IsEnabled))
-            //            {
-            //                Interpreter.Unpause();
-            //                return;
-            //            }
-            //            return;  
-            //        }
-
-            //        Thread.Sleep(25); // keep iteration
-            //    }
-            //    Interpreter.Unpause();
-            //});
-            return true;
+                    if (!c.IsDisposed && c.ServerSerial == gumpid)
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         private static bool WaitForTarget(ArgumentList argList, bool quiet, bool force)
